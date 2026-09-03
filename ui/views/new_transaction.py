@@ -2,12 +2,22 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLineEdit, QComboBox, QDateEdit, QPushButton,
     QTableWidget, QHeaderView, QLabel, QDoubleSpinBox,
-    QMessageBox
+    QMessageBox, QCompleter, QCheckBox
 )
 from PyQt6.QtCore import QDate, Qt
 from repositories.reference_repo import ReferenceRepository
 from repositories.product_repo import ProductRepository
 from repositories.transaction_repo import TransactionRepository
+
+class PriceSpinBox(QDoubleSpinBox):
+    def __init__(self, add_row_callback, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.add_row_callback = add_row_callback
+
+    def keyPressEvent(self, event):
+        super().keyPressEvent(event)
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.add_row_callback()
 
 class NewTransactionView(QWidget):
     def __init__(self):
@@ -33,6 +43,11 @@ class NewTransactionView(QWidget):
         self.counterparty_input = QComboBox()
         self.counterparty_input.setEditable(True)
         self.counterparty_input.setPlaceholderText("Type or select store/person...")
+
+        cp_completer = QCompleter(self.counterparty_input.model())
+        cp_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        cp_completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self.counterparty_input.setCompleter(cp_completer)
         self.counterparty_input.currentTextChanged.connect(self.on_counterparty_changed)
 
         self.location_input = QComboBox()
@@ -52,17 +67,23 @@ class NewTransactionView(QWidget):
         form_layout.addRow("Receipt No:", self.receipt_number_input)
         form_layout.addRow("Payment Type:", self.payment_type_input)
         form_layout.addRow("Currency:", self.currency_input)
-
         layout.addLayout(form_layout)
 
         self.items_table = QTableWidget(0, 5)
         self.items_table.setHorizontalHeaderLabels(["Product", "Amount", "Price", "Total", "Actions"])
+        self.items_table.verticalHeader().setVisible(False)
+
         self.items_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.items_table.setColumnWidth(1, 150)
+        self.items_table.setColumnWidth(2, 90)
+        self.items_table.setColumnWidth(3, 100)
+        self.items_table.setColumnWidth(4, 70)
+        self.items_table.setColumnWidth(5, 100)
+        self.items_table.setColumnWidth(6, 50)
         self.items_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         layout.addWidget(self.items_table)
 
         self.add_item_btn = QPushButton("Add Item Row")
-        self.add_item_btn.setShortcut("Return")
         self.add_item_btn.clicked.connect(self.add_empty_row)
         layout.addWidget(self.add_item_btn)
 
@@ -109,6 +130,8 @@ class NewTransactionView(QWidget):
         curr_payment = self.payment_type_input.currentData()
         curr_cp = self.counterparty_input.currentText()
 
+        self.products = self.product_repo.get_all_products(include_hidden=False)
+
         self.currency_input.clear()
         self.payment_type_input.clear()
         self.counterparty_input.clear()
@@ -143,58 +166,92 @@ class NewTransactionView(QWidget):
             if idx >= 0: self.currency_input.setCurrentIndex(idx)
 
     def add_empty_row(self):
+        row_count = self.items_table.rowCount()
+
+        if row_count > 0:
+            last_product_cb = self.items_table.cellWidget(row_count - 1, 0)
+            if last_product_cb and not last_product_cb.currentText().strip():
+                last_product_cb.setFocus()
+                return
+
         row_idx = self.items_table.rowCount()
         self.items_table.insertRow(row_idx)
 
         product_cb = QComboBox()
         product_cb.setEditable(True)
         product_cb.setPlaceholderText("Type product name...")
+
+        prod_completer = QCompleter(product_cb.model())
+        prod_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        prod_completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        product_cb.setCompleter(prod_completer)
+
         for p in self.products:
             product_cb.addItem(p.name, userData=p.id)
         self.items_table.setCellWidget(row_idx, 0, product_cb)
+
+        override_le = QLineEdit()
+        override_le.setPlaceholderText("Optional...")
+        self.items_table.setCellWidget(row_idx, 1, override_le)
 
         amount_sb = QDoubleSpinBox()
         amount_sb.setRange(0.001, 9999.999)
         amount_sb.setDecimals(3)
         amount_sb.setValue(1.0)
         amount_sb.valueChanged.connect(self.calculate_totals)
-        self.items_table.setCellWidget(row_idx, 1, amount_sb)
+        self.items_table.setCellWidget(row_idx, 2, amount_sb)
 
-        price_sb = QDoubleSpinBox()
+        price_sb = PriceSpinBox(self.add_empty_row)
         price_sb.setRange(0.00, 99999.99)
         price_sb.setDecimals(2)
         price_sb.valueChanged.connect(self.calculate_totals)
-        self.items_table.setCellWidget(row_idx, 2, price_sb)
+        self.items_table.setCellWidget(row_idx, 3, price_sb)
+
+        refund_cb = QCheckBox()
+        refund_cb.stateChanged.connect(self.calculate_totals)
+        chk_widget = QWidget()
+        chk_layout = QHBoxLayout(chk_widget)
+        chk_layout.addWidget(refund_cb)
+        chk_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        chk_layout.setContentsMargins(0,0,0,0)
+        chk_widget.refund_cb = refund_cb
+        self.items_table.setCellWidget(row_idx, 4, chk_widget)
 
         row_total_lbl = QLabel("0.00")
         row_total_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.items_table.setCellWidget(row_idx, 3, row_total_lbl)
+        self.items_table.setCellWidget(row_idx, 5, row_total_lbl)
 
         del_btn = QPushButton("X")
         del_btn.setStyleSheet("color: red; font-weight: bold; max-width: 30px;")
         del_btn.clicked.connect(lambda checked, b=del_btn: self.remove_row(b))
-        self.items_table.setCellWidget(row_idx, 4, del_btn)
+        self.items_table.setCellWidget(row_idx, 6, del_btn)
 
         product_cb.setFocus()
 
     def remove_row(self, btn):
-        index = self.items_table.indexAt(btn.pos())
-        if index.isValid():
-            self.items_table.removeRow(index.row())
-            self.calculate_totals()
+        for row in range(self.items_table.rowCount()):
+            if self.items_table.cellWidget(row, 6) == btn:
+                self.items_table.removeRow(row)
+                self.calculate_totals()
+                break
 
     def calculate_totals(self):
         raw_total = 0.0
 
         for row in range(self.items_table.rowCount()):
-            amount_widget = self.items_table.cellWidget(row, 1)
-            price_widget = self.items_table.cellWidget(row, 2)
-            total_label = self.items_table.cellWidget(row, 3)
+            amount_widget = self.items_table.cellWidget(row, 2)
+            price_widget = self.items_table.cellWidget(row, 3)
+            refund_widget = self.items_table.cellWidget(row, 4)
+            total_label = self.items_table.cellWidget(row, 5)
 
-            if amount_widget and price_widget and total_label:
+            if amount_widget and price_widget and total_label and refund_widget:
                 amount = amount_widget.value()
                 price = price_widget.value()
+                is_refund = refund_widget.refund_cb.isChecked()
+
                 row_total = amount * price
+                if is_refund:
+                    row_total = -row_total
 
                 total_label.setText(f"{row_total:.2f}")
                 raw_total += row_total
@@ -211,8 +268,10 @@ class NewTransactionView(QWidget):
         items_data = []
         for row in range(self.items_table.rowCount()):
             product_cb = self.items_table.cellWidget(row, 0)
-            amount_sb = self.items_table.cellWidget(row, 1)
-            price_sb = self.items_table.cellWidget(row, 2)
+            override_le = self.items_table.cellWidget(row, 1)
+            amount_sb = self.items_table.cellWidget(row, 2)
+            price_sb = self.items_table.cellWidget(row, 3)
+            refund_widget = self.items_table.cellWidget(row, 4)
 
             if not product_cb:
                 continue
@@ -223,8 +282,10 @@ class NewTransactionView(QWidget):
 
             items_data.append({
                 "product_name": product_name,
+                "override": override_le.text().strip() or None,
                 "amount": amount_sb.value(),
-                "price": price_sb.value()
+                "price": price_sb.value(),
+                "refund": refund_widget.refund_cb.isChecked()
             })
 
         if not items_data:

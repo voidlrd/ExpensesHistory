@@ -13,13 +13,22 @@ class TransactionRepository:
             )
             if not counterparty:
                 cat = session.scalar(select(CounterpartyCategory).where(CounterpartyCategory.name == "Supermarket"))
-                cat_id = cat.id if cat else 1
+                if not cat:
+                    cat = CounterpartyCategory(name="Supermarket")
+                    session.add(cat)
+                    session.flush()
 
-                counterparty = Counterparty(name=counterparty_name, category_id=cat_id)
+                counterparty = Counterparty(name=counterparty_name, category_id=cat.id)
                 session.add(counterparty)
                 session.flush()
 
-            gross_amount = sum(Decimal(str(item["amount"])) * Decimal(str(item["price"])) for item in items_data)
+            gross_amount = Decimal(0.0)
+            for item in items_data:
+                line_total = Decimal(str(item["amount"])) * Decimal(str(item["price"]))
+                if item["refund"]:
+                    gross_amount -= line_total
+                else:
+                    gross_amount += line_total
             final_amount = gross_amount - Decimal(str(discount))
 
             transaction = TransactionRecord(
@@ -47,8 +56,10 @@ class TransactionRepository:
                 new_item = Item(
                     transaction_id=transaction.id,
                     product_id=product.id,
+                    item_name_override=item_data["override"],
                     amount=Decimal(str(item_data["amount"])),
-                    price=Decimal(str(item_data["price"]))
+                    price=Decimal(str(item_data["price"])),
+                    refund=item_data["refund"]
                 )
                 session.add(new_item)
 
@@ -80,15 +91,11 @@ class TransactionRepository:
     @staticmethod
     def get_transaction_with_items(tx_id: int):
         with get_session() as session:
-            stmt = (
-                select(TransactionRecord)
-                .options(
-                    joinedload(TransactionRecord.counterparty),
-                    joinedload(TransactionRecord.payment_type),
-                    joinedload(TransactionRecord.items).joinedload(Item.product)
-                )
-                .where(TransactionRecord.id == tx_id)
-            )
+            stmt = select(TransactionRecord).options(
+                joinedload(TransactionRecord.counterparty),
+                joinedload(TransactionRecord.payment_type),
+                joinedload(TransactionRecord.items).joinedload(Item.product)
+            ).where(TransactionRecord.id == tx_id)
             return session.scalar(stmt)
 
     @staticmethod

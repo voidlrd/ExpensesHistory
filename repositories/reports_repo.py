@@ -1,6 +1,6 @@
 import calendar
 from datetime import date
-from sqlalchemy import select, func, desc
+from sqlalchemy import select, func, desc, case
 from database.engine import get_session
 from database.models import TransactionRecord, IncomeRecord, Counterparty, ItemCategory, Item, Product
 
@@ -11,7 +11,8 @@ class ReportsRepository:
         today = date.today()
         y = year or today.year
         m = month or today.month
-        _, last_day = calendar.monthrange(today.year, today.month)
+
+        _, last_day = calendar.monthrange(y, m)
         return date(y, m, 1), date(y, m, last_day)
 
     @staticmethod
@@ -57,8 +58,13 @@ class ReportsRepository:
         start_date, end_date = ReportsRepository._get_month_bounds(year, month)
 
         with get_session() as session:
+            row_total = case(
+                (Item.refund == True, -(Item.amount * Item.price)),
+                else_=(Item.amount * Item.price)
+            )
+
             stmt = (
-                select(ItemCategory.name, func.sum(Item.amount * Item.price).label("total"))
+                select(ItemCategory.name, func.sum(row_total).label("total"))
                 .select_from(Item)
                 .join(Item.transaction)
                 .join(Item.product)

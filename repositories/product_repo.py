@@ -5,9 +5,20 @@ from database.models import Product, Item, TransactionRecord, ItemCategory
 
 class ProductRepository:
     @staticmethod
-    def get_all_products():
+    def get_all_products(include_hidden=False):
         with get_session() as session:
-            return session.scalars(select(Product).order_by(Product.name)).all()
+            stmt = select(Product).order_by(Product.name)
+            if not include_hidden:
+                stmt = stmt.where(Product.hidden == False)
+            return session.scalars(stmt).all()
+
+    @staticmethod
+    def set_hidden_status(product_id, hidden):
+        with get_session() as session:
+            p = session.get(Product, product_id)
+            if p:
+                p.hidden = hidden
+                session.commit()
 
     @staticmethod
     def get_product_price_history(product_id: int):

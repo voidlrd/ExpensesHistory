@@ -38,8 +38,9 @@ class TransactionDetailDialog(QDialog):
         for row_idx, item in enumerate(transaction.items):
             self.table.insertRow(row_idx)
 
-            prod_name = item.product.name if item.product else "Unknown"
-            self.table.setItem(row_idx, 0, QTableWidgetItem(prod_name))
+            base_name = item.product.name if item.product else "Unknown"
+            display_name = f"{item.item_name_override} ({base_name})" if item.item_name_override else base_name
+            self.table.setItem(row_idx, 0, QTableWidgetItem(display_name))
 
             amount_item = QTableWidgetItem(f"{item.amount:.3f}")
             amount_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -50,6 +51,9 @@ class TransactionDetailDialog(QDialog):
             self.table.setItem(row_idx, 2, price_item)
 
             row_total = item.amount * item.price
+            if item.refund:
+                row_total = -row_total
+
             total_item = QTableWidgetItem(f"{row_total:.2f}")
             total_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self.table.setItem(row_idx, 3, total_item)

@@ -26,6 +26,7 @@ class Counterparty(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(250), nullable=False)
     category_id: Mapped[int] = mapped_column("category", ForeignKey("counterparty_category.id"), nullable=False)
+    hidden: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     category: Mapped["CounterpartyCategory"] = relationship()
     locations: Mapped[List["CounterpartyLocation"]] = relationship(back_populates="counterparty")
@@ -70,6 +71,7 @@ class Product(Base):
     brand: Mapped[Optional[str]] = mapped_column(String(100))
     unit_of_measure: Mapped[Optional[str]] = mapped_column(String(20))
     category_id: Mapped[Optional[int]] = mapped_column("category", ForeignKey("item_category.id"))
+    hidden: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     category: Mapped[Optional["ItemCategory"]] = relationship()
 

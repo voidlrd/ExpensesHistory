@@ -13,9 +13,12 @@ class IncomeRepository:
             )
             if not counterparty:
                 cat = session.scalar(select(CounterpartyCategory).where(CounterpartyCategory.name == "Employer"))
-                cat_id = cat.id if cat else 3
+                if not cat:
+                    cat = CounterpartyCategory(name="Employer")
+                    session.add(cat)
+                    session.flush()
 
-                counterparty = Counterparty(name=counterparty_name, category_id=cat_id)
+                counterparty = Counterparty(name=counterparty_name, category_id=cat.id)
                 session.add(counterparty)
                 session.flush()
 
