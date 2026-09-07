@@ -61,7 +61,7 @@ class DataManagerView(QWidget):
         cp_right_panel.addWidget(self.loc_group)
         self.loc_group.setEnabled(False)
 
-        cp_layout.addWidget(cp_right_panel, 1)
+        cp_layout.addLayout(cp_right_panel, 1)
         self.tabs.addTab(self.cp_tab, "Stores & People")
 
         self.prod_tab = QWidget()
