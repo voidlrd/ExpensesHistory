@@ -56,6 +56,7 @@ class PriceTrackerView(QWidget):
         self.plot_widget.setLabel('left', 'Unit Price')
         self.plot_widget.showGrid(x=True, y=True, alpha=0.3)
         self.plot_widget.setMinimumHeight(250)
+        self.plot_widget.setVisible(False)
         layout.addWidget(self.plot_widget)
 
         self.table = QTableWidget(0, 4)
@@ -126,8 +127,11 @@ class PriceTrackerView(QWidget):
         self.plot_widget.clear()
 
         if not items:
+            self.plot_widget.setVisible(False)
             self._reset_stats()
             return
+        
+        self.plot_widget.setVisible(True)
 
         lowest_item = items[0]
         highest_item = items[0]
