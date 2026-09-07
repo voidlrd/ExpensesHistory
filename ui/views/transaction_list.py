@@ -154,6 +154,7 @@ class TransactionListView(QWidget):
         self.table.setAlternatingRowColors(True)
         self.table.itemDoubleClicked.connect(self.show_details)
 
+        self.table.setSortingEnabled(True)
         layout.addWidget(self.table)
 
     def on_type_changed(self):
@@ -201,6 +202,7 @@ class TransactionListView(QWidget):
         self.load_data()
 
     def load_data(self):
+        self.table.setSortingEnabled(False)
         self.table.setRowCount(0)
 
         start = self.start_date.date().toPyDate()
@@ -253,6 +255,8 @@ class TransactionListView(QWidget):
 
                 self.table.setItem(row_idx, 3, QTableWidgetItem(inc.currency_code))
                 self.table.setItem(row_idx, 4, QTableWidgetItem(inc.payment_type.type if inc.payment_type else "Unknown"))
+
+        self.table.setSortingEnabled(True)
 
     def show_details(self, item):
         row = item.row()
