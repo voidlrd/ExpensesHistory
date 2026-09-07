@@ -6,7 +6,7 @@ from database.models import TransactionRecord, Item, Counterparty, Product, Coun
 
 class TransactionRepository:
     @staticmethod
-    def save_transaction(date, counterparty_name, receipt_no, payment_type_id, currency_code, items_data, location_id=None, discount=0):
+    def save_transaction(date, counterparty_name, receipt_no, payment_type_id, currency_code, items_data, location_id=None):
         with get_session() as session:
             counterparty = session.scalar(
                 select(Counterparty).where(func.lower(Counterparty.name) == counterparty_name.lower())
@@ -24,12 +24,12 @@ class TransactionRepository:
 
             gross_amount = Decimal(0.0)
             for item in items_data:
-                line_total = Decimal(str(item["amount"])) * Decimal(str(item["price"]))
+                line_total = Decimal(str(item["amount"])) * Decimal(str(item["price"])) - Decimal(str(item["discount"]))
                 if item["refund"]:
                     gross_amount -= line_total
                 else:
                     gross_amount += line_total
-            final_amount = gross_amount - Decimal(str(discount))
+            final_amount = gross_amount
 
             transaction = TransactionRecord(
                 number=receipt_no,
@@ -38,8 +38,7 @@ class TransactionRepository:
                 counterparty_id=counterparty.id,
                 location_id=location_id,
                 date=date,
-                total_amount=final_amount,
-                discount=Decimal(str(discount))
+                total_amount=final_amount
             )
             session.add(transaction)
             session.flush()
@@ -59,6 +58,7 @@ class TransactionRepository:
                     item_name_override=item_data["override"],
                     amount=Decimal(str(item_data["amount"])),
                     price=Decimal(str(item_data["price"])),
+                    discount=Decimal(str(item_data["discount"])),
                     refund=item_data["refund"]
                 )
                 session.add(new_item)

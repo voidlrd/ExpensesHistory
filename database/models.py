@@ -51,7 +51,6 @@ class TransactionRecord(Base):
     location_id: Mapped[Optional[int]] = mapped_column("location", ForeignKey("counterparty_location.id"))
     date: Mapped[datetime.date] = mapped_column(Date, nullable=False, index=True)
     total_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
-    discount: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), default=0)
 
     payment_type: Mapped["PaymentType"] = relationship()
     currency: Mapped["Currency"] = relationship()
@@ -83,6 +82,7 @@ class Item(Base):
     item_name_override: Mapped[Optional[str]] = mapped_column(String(250))
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 3), nullable=False)
     price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    discount: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0, nullable=False)
     refund: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     transaction: Mapped["TransactionRecord"] = relationship(back_populates="items")

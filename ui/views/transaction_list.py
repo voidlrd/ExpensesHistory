@@ -26,22 +26,22 @@ class TransactionDetailDialog(QDialog):
         info_text = (
             f"<b>Date:</b> {transaction.date} &nbsp;&nbsp;&nbsp; "
             f"<b>Receipt No:</b> {transaction.number or 'N/A'} &nbsp;&nbsp;&nbsp; "
-            f"{discount_text} &nbsp;&nbsp;&nbsp; "
             f"<b>Total:</b> {transaction.total_amount:.2f} {transaction.currency_code}"
         )
         info_label = QLabel(info_text)
         info_label.setStyleSheet("font-size: 14px; margin-bottom: 10px;")
         layout.addWidget(info_label)
 
-        self.table = QTableWidget(0, 7)
-        self.table.setHorizontalHeaderLabels(["Product", "Category", "Brand", "Amount", "Unit", "Price", "Row Total"])
+        self.table = QTableWidget(0, 8)
+        self.table.setHorizontalHeaderLabels(["Product", "Category", "Brand", "Amount", "Unit", "Price", "Discount", "Row Total"])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.setColumnWidth(1, 120)
-        self.table.setColumnWidth(2, 100)
-        self.table.setColumnWidth(3, 70)
-        self.table.setColumnWidth(4, 60)
-        self.table.setColumnWidth(5, 70)
-        self.table.setColumnWidth(6, 80)
+        self.table.setColumnWidth(2, 90)
+        self.table.setColumnWidth(3, 60)
+        self.table.setColumnWidth(4, 50)
+        self.table.setColumnWidth(5, 60)
+        self.table.setColumnWidth(6, 60)
+        self.table.setColumnWidth(6, 70)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
 
@@ -76,13 +76,18 @@ class TransactionDetailDialog(QDialog):
             price_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self.table.setItem(row_idx, 5, price_item)
 
-            row_total = item.amount * item.price
+            disc_item = QTableWidgetItem(f"{item.discount:.2f}")
+            disc_item.setStyleSheet("color: red;" if item.discount > 0 else "")
+            disc_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            self.table.setItem(row_idx, 6, disc_item)
+
+            row_total = (item.amount * item.price) - item.discount
             if item.refund:
                 row_total = -row_total
 
             total_item = QTableWidgetItem(f"{row_total:.2f}")
             total_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            self.table.setItem(row_idx, 6, total_item)
+            self.table.setItem(row_idx, 7, total_item)
 
         layout.addWidget(self.table)
 

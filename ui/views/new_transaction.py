@@ -9,15 +9,22 @@ from repositories.reference_repo import ReferenceRepository
 from repositories.product_repo import ProductRepository
 from repositories.transaction_repo import TransactionRepository
 
-class PriceSpinBox(QDoubleSpinBox):
+class FastTabSpinBox(QDoubleSpinBox):
     def __init__(self, add_row_callback, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.add_row_callback = add_row_callback
 
     def keyPressEvent(self, event):
-        super().keyPressEvent(event)
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             self.add_row_callback()
+            return
+        super().keyPressEvent(event)
+
+    def focusNextPrevChild(self, next_widget):
+        if next_widget:
+            self.add_row_callback()
+            return True
+        return super().focusNextPrevChild(next_widget)
 
 class NewTransactionView(QWidget):
     def __init__(self):
@@ -69,17 +76,18 @@ class NewTransactionView(QWidget):
         form_layout.addRow("Currency:", self.currency_input)
         layout.addLayout(form_layout)
 
-        self.items_table = QTableWidget(0, 7)
-        self.items_table.setHorizontalHeaderLabels(["Product", "Override", "Amount", "Price", "Refund", "Total", ""])
+        self.items_table = QTableWidget(0, 8)
+        self.items_table.setHorizontalHeaderLabels(["Product", "Override", "Amount", "Price", "Discount", "Refund", "Total", ""])
         self.items_table.verticalHeader().setVisible(False)
 
         self.items_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.items_table.setColumnWidth(1, 120)
-        self.items_table.setColumnWidth(2, 90)
-        self.items_table.setColumnWidth(3, 90)
-        self.items_table.setColumnWidth(4, 60)
-        self.items_table.setColumnWidth(5, 80)
-        self.items_table.setColumnWidth(6, 40)
+        self.items_table.setColumnWidth(2, 80)
+        self.items_table.setColumnWidth(3, 80)
+        self.items_table.setColumnWidth(4, 80)
+        self.items_table.setColumnWidth(5, 60)
+        self.items_table.setColumnWidth(6, 80)
+        self.items_table.setColumnWidth(7, 40)
         self.items_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         layout.addWidget(self.items_table)
 
@@ -88,12 +96,6 @@ class NewTransactionView(QWidget):
         layout.addWidget(self.add_item_btn)
 
         footer_layout = QHBoxLayout()
-
-        self.discount_input = QDoubleSpinBox()
-        self.discount_input.setRange(0.00, 9999.99)
-        self.discount_input.setDecimals(2)
-        self.discount_input.valueChanged.connect(self.calculate_totals)
-
         self.duplicate_warning_label = QLabel("⚠️ Duplicate Detected!")
         self.duplicate_warning_label.setStyleSheet("color: #F44336; font-weight: bold; font-size: 14px;")
         self.duplicate_warning_label.setVisible(False)
@@ -106,9 +108,6 @@ class NewTransactionView(QWidget):
         self.save_btn.clicked.connect(self.save_transaction)
 
         footer_layout.addStretch()
-        footer_layout.addWidget(QLabel("Discount:"))
-        footer_layout.addWidget(self.discount_input)
-        footer_layout.addSpacing(20)
         footer_layout.addWidget(self.duplicate_warning_label)
         footer_layout.addSpacing(10)
         footer_layout.addWidget(self.total_label)
@@ -211,11 +210,17 @@ class NewTransactionView(QWidget):
         amount_sb.valueChanged.connect(self.calculate_totals)
         self.items_table.setCellWidget(row_idx, 2, amount_sb)
 
-        price_sb = PriceSpinBox(self.add_empty_row)
+        price_sb = QDoubleSpinBox()
         price_sb.setRange(0.00, 99999.99)
         price_sb.setDecimals(2)
         price_sb.valueChanged.connect(self.calculate_totals)
         self.items_table.setCellWidget(row_idx, 3, price_sb)
+
+        disc_sb = FastTabSpinBox(self.add_empty_row)
+        disc_sb.setRange(0.00, 99999.99)
+        disc_sb.setDecimals(2)
+        disc_sb.valueChanged.connect(self.calculate_totals)
+        self.items_table.setCellWidget(row_idx, 4, disc_sb)
 
         refund_cb = QCheckBox()
         refund_cb.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -226,17 +231,17 @@ class NewTransactionView(QWidget):
         chk_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         chk_layout.setContentsMargins(0,0,0,0)
         chk_widget.refund_cb = refund_cb
-        self.items_table.setCellWidget(row_idx, 4, chk_widget)
+        self.items_table.setCellWidget(row_idx, 5, chk_widget)
 
         row_total_lbl = QLabel("0.00")
         row_total_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.items_table.setCellWidget(row_idx, 5, row_total_lbl)
+        self.items_table.setCellWidget(row_idx, 6, row_total_lbl)
 
         del_btn = QPushButton("X")
         del_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         del_btn.setStyleSheet("color: red; font-weight: bold; max-width: 30px;")
         del_btn.clicked.connect(lambda checked, b=del_btn: self.remove_row(b))
-        self.items_table.setCellWidget(row_idx, 6, del_btn)
+        self.items_table.setCellWidget(row_idx, 7, del_btn)
 
         product_cb.setFocus()
 
@@ -253,23 +258,24 @@ class NewTransactionView(QWidget):
         for row in range(self.items_table.rowCount()):
             amount_widget = self.items_table.cellWidget(row, 2)
             price_widget = self.items_table.cellWidget(row, 3)
-            refund_widget = self.items_table.cellWidget(row, 4)
-            total_label = self.items_table.cellWidget(row, 5)
+            disc_widget = self.items_table.cellWidget(row, 4)
+            refund_widget = self.items_table.cellWidget(row, 5)
+            total_label = self.items_table.cellWidget(row, 6)
 
             if amount_widget and price_widget and total_label and refund_widget:
                 amount = amount_widget.value()
                 price = price_widget.value()
+                disc = disc_widget.value()
                 is_refund = refund_widget.refund_cb.isChecked()
 
-                row_total = amount * price
+                row_total = (amount * price) - disc
                 if is_refund:
                     row_total = -row_total
 
                 total_label.setText(f"{row_total:.2f}")
                 raw_total += row_total
 
-        grand_total = raw_total - self.discount_input.value()
-        self.total_label.setText(f"Total: {grand_total:.2f}")
+        self.total_label.setText(f"Total: {raw_total:.2f}")
 
         self.check_for_duplicate()
 
@@ -305,7 +311,8 @@ class NewTransactionView(QWidget):
             override_le = self.items_table.cellWidget(row, 1)
             amount_sb = self.items_table.cellWidget(row, 2)
             price_sb = self.items_table.cellWidget(row, 3)
-            refund_widget = self.items_table.cellWidget(row, 4)
+            disc_sb = self.items_table.cellWidget(row, 4)
+            refund_widget = self.items_table.cellWidget(row, 5)
 
             if not product_cb:
                 continue
@@ -314,23 +321,14 @@ class NewTransactionView(QWidget):
             if not product_name:
                 continue
 
-            amount = amount_sb.value()
-            price = price_sb.value()
-            is_refund = refund_widget.refund_cb.isChecked()
-
             items_data.append({
                 "product_name": product_name,
                 "override": override_le.text().strip() or None,
-                "amount": amount,
-                "price": price,
-                "refund": is_refund
+                "amount": amount_sb.value(),
+                "price": price_sb.value(),
+                "discount": disc_sb.value(),
+                "refund": refund_widget.refund_cb.isChecked()
             })
-
-            line_total = amount * price
-            if is_refund:
-                raw_total -= line_total
-            else:
-                raw_total += line_total
 
         if not items_data:
             QMessageBox.warning(self, "Validation Error", "Please add at least one valid item.")
@@ -340,13 +338,13 @@ class NewTransactionView(QWidget):
         receipt_no = self.receipt_number_input.text().strip() or None
         payment_type_id = self.payment_type_input.currentData()
         currency_code = self.currency_input.currentData()
-        discount = self.discount_input.value()
-
-        final_amount = raw_total - discount
 
         location_id = None
         if self.location_input.isVisible() and self.location_input.count() > 0:
             location_id = self.location_input.currentData()
+
+        total_text = self.total_label.text().replace("Total: ", "")
+        final_amount = float(total_text)
 
         is_duplicate = TransactionRepository.check_potential_duplicate(date, counterparty_name, final_amount)
         if is_duplicate:
@@ -369,8 +367,7 @@ class NewTransactionView(QWidget):
                 payment_type_id=payment_type_id,
                 currency_code=currency_code,
                 items_data=items_data,
-                location_id=location_id,
-                discount=discount
+                location_id=location_id
             )
             QMessageBox.information(self, "Success", "Transaction saved successfully!")
             self.reset_form()
@@ -380,7 +377,6 @@ class NewTransactionView(QWidget):
 
     def reset_form(self):
         self.receipt_number_input.clear()
-        self.discount_input.setValue(0.0)
         self.items_table.setRowCount(0)
         self.date_input.setDate(QDate.currentDate())
 

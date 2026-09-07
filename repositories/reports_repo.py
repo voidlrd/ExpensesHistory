@@ -82,8 +82,8 @@ class ReportsRepository:
 
         with get_session() as session:
             row_total = case(
-                (Item.refund == True, -(Item.amount * Item.price)),
-                else_=(Item.amount * Item.price)
+                (Item.refund == True, -((Item.amount * Item.price) - Item.discount)),
+                else_=((Item.amount * Item.price) - Item.discount)
             )
 
             stmt = (

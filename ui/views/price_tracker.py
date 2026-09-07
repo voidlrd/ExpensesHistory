@@ -160,20 +160,24 @@ class PriceTrackerView(QWidget):
             amount_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self.table.setItem(row_idx, 2, amount_item)
 
+            eff_price = float((item.amount * item.price) - item.discount) / amount_val if amount_val > 0 else float(item.price)
+
+            item._eff_price = eff_price
+
             price_item = QTableWidgetItem(f"{item.price:.2f} {tx.currency_code}")
             price_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self.table.setItem(row_idx, 3, price_item)
 
-            if item.price < lowest_item.price:
+            if getattr(lowest_item, '_eff_price', float(lowest_item.price)) > eff_price:
                 lowest_item = item
-            if item.price > highest_item.price:
+            if getattr(highest_item, '_eff_price', float(highest_item.price)) < eff_price:
                 highest_item = item
 
         for item in reversed(items):
             dt = item.transaction.date
             ts = datetime(dt.year, dt.month, dt.day).timestamp()
             timestamps.append(ts)
-            prices.append(float(item.price))
+            prices.append(getattr(item, '_eff_price', float(item.price)))
 
         if timestamps:
             self.plot_widget.plot(
@@ -191,6 +195,7 @@ class PriceTrackerView(QWidget):
         store_name = tx.counterparty.name if tx.counterparty else "Unknown"
         date_str = tx.date.strftime("%b %Y")
 
+        val = getattr(item, '_eff_price', float(item.price))
         card_dict["value"].setText(f"{item.price:.2f} {tx.currency_code}")
         card_dict["sub"].setText(f"{store_name}\n({date_str})")
 
