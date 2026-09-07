@@ -124,6 +124,9 @@ class TransactionListView(QWidget):
         title_label = QLabel("Transaction History")
         title_label.setStyleSheet("font-size: 18px; font-weight: bold;")
 
+        top_bar.addWidget(title_label)
+        layout.addLayout(top_bar)
+
         filter_group = QGroupBox("Filters")
         filter_layout = QHBoxLayout()
 
