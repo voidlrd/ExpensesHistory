@@ -3,10 +3,22 @@ from PyQt6.QtWidgets import (
     QHeaderView, QPushButton, QHBoxLayout, QLabel, QDialog,
     QGroupBox, QDateEdit, QComboBox, QMessageBox
 )
+from PyQt6.QtGui import QBrush, QColor
 from PyQt6.QtCore import Qt, QDate, pyqtSignal
-from repositories.transaction_repo import TransactionRepository
+from repositories.transaction_repo import TransactionRepository, line_total
 from repositories.reference_repo import ReferenceRepository
 from repositories.income_repo import IncomeRepository
+
+class NumericItem(QTableWidgetItem):
+    def __init__(self, value, text=None):
+        super().__init__(text if text is not None else f"{value:.2f}")
+        self.value = value
+        self.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+    def __lt__(self, other):
+        if isinstance(other, NumericItem):
+            return self.value < other.value
+        return super().__lt__(other)
 
 class TransactionDetailDialog(QDialog):
     transaction_deleted = pyqtSignal()
@@ -41,8 +53,8 @@ class TransactionDetailDialog(QDialog):
         self.table.setColumnWidth(3, 60)
         self.table.setColumnWidth(4, 50)
         self.table.setColumnWidth(5, 60)
-        self.table.setColumnWidth(6, 60)
         self.table.setColumnWidth(6, 70)
+        self.table.setColumnWidth(7, 80)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
 
@@ -66,29 +78,20 @@ class TransactionDetailDialog(QDialog):
             else:
                 amount_str = f"{amount_val:.3f}".rstrip('0').rstrip('.')
             
-            amount_item = QTableWidgetItem(amount_str)
-            amount_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            self.table.setItem(row_idx, 3, amount_item)
+            self.table.setItem(row_idx, 3, NumericItem(float(item.amount), amount_str))
 
             unit_name = item.product.unit_of_measure if item.product else ""
             self.table.setItem(row_idx, 4, QTableWidgetItem(unit_name))
 
-            price_item = QTableWidgetItem(f"{item.price:.2f}")
-            price_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            self.table.setItem(row_idx, 5, price_item)
+            self.table.setItem(row_idx, 5, NumericItem(float(item.price)))
 
-            disc_item = QTableWidgetItem(f"{item.discount:.2f}")
-            disc_item.setStyleSheet("color: red;" if item.discount > 0 else "")
-            disc_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            disc_item = NumericItem(float(item.discount))
+            if item.discount > 0:
+                disc_item.setForeground(QBrush(QColor("red")))
             self.table.setItem(row_idx, 6, disc_item)
 
-            row_total = (item.amount * item.price) - item.discount
-            if item.refund:
-                row_total = -row_total
-
-            total_item = QTableWidgetItem(f"{row_total:.2f}")
-            total_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            self.table.setItem(row_idx, 7, total_item)
+            row_total = line_total(item.amount, item.price, item.discount, item.refund)
+            self.table.setItem(row_idx, 7, NumericItem(float(row_total)))
 
         layout.addWidget(self.table)
 
@@ -267,9 +270,7 @@ class TransactionListView(QWidget):
                 receipt_item = QTableWidgetItem(tx.number or "")
                 self.table.setItem(row_idx, 2, receipt_item)
 
-                total_item = QTableWidgetItem(f"{tx.total_amount:.2f}")
-                total_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                self.table.setItem(row_idx, 3, total_item)
+                self.table.setItem(row_idx, 3, NumericItem(float(tx.total_amount or 0)))
 
                 curr_item = QTableWidgetItem(tx.currency_code)
                 self.table.setItem(row_idx, 4, curr_item)
@@ -289,9 +290,7 @@ class TransactionListView(QWidget):
                 cp_item = QTableWidgetItem(inc.counterparty.name if inc.counterparty else "Unknown")
                 self.table.setItem(row_idx, 1, cp_item)
 
-                amount_item = QTableWidgetItem(f"{inc.net_amount:.2f}")
-                amount_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                self.table.setItem(row_idx, 2, amount_item)
+                self.table.setItem(row_idx, 2, NumericItem(float(inc.net_amount)))
 
                 self.table.setItem(row_idx, 3, QTableWidgetItem(inc.currency_code))
                 self.table.setItem(row_idx, 4, QTableWidgetItem(inc.payment_type.type if inc.payment_type else "Unknown"))
@@ -301,6 +300,8 @@ class TransactionListView(QWidget):
     def show_details(self, item):
         row = item.row()
         first_cell = self.table.item(row, 0)
+        if not first_cell:
+            return
         rec_id = first_cell.data(Qt.ItemDataRole.UserRole)
         rec_type = first_cell.data(Qt.ItemDataRole.UserRole + 1)
 
