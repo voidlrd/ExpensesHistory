@@ -58,7 +58,14 @@ class TransactionDetailDialog(QDialog):
             brand_name = item.product.brand if item.product else ""
             self.table.setItem(row_idx, 2, QTableWidgetItem(brand_name))
 
-            amount_item = QTableWidgetItem(f"{item.amount:.3f}")
+            
+            amount_val = float(item.amount)
+            if amount_val.is_integer():
+                amount_str = str(int(amount_val))
+            else:
+                amount_str = f"{amount_val:.3f}".rstrip('0').rstrip('.')
+            
+            amount_item = QTableWidgetItem(amount_str)
             amount_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self.table.setItem(row_idx, 3, amount_item)
 

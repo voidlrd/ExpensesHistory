@@ -149,8 +149,14 @@ class PriceTrackerView(QWidget):
             self.table.setItem(row_idx, 0, QTableWidgetItem(date_str))
             self.table.setItem(row_idx, 1, QTableWidgetItem(store_name))
 
+            amount_val = float(item.amount)
+            if amount_val.is_integer():
+                amount_str = str(int(amount_val))
+            else:
+                amount_str = f"{amount_val:.3f}".rstrip('0').rstrip('.')
+            
             unit = item.product.unit_of_measure or ""
-            amount_item = QTableWidgetItem(f"{item.amount:.3f} {unit}".strip())
+            amount_item = QTableWidgetItem(f"{amount_str} {unit}".strip())
             amount_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self.table.setItem(row_idx, 2, amount_item)
 
