@@ -44,7 +44,7 @@ class CounterpartyLocation(Base):
 class TransactionRecord(Base):
     __tablename__ = "transaction_record"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    number: Mapped[Optional[str]] = mapped_column(String(50), unique=True)
+    number: Mapped[Optional[str]] = mapped_column(String(50), index=True)
     payment_type_id: Mapped[int] = mapped_column("payment_type", ForeignKey("payment_type.id"), nullable=False)
     currency_code: Mapped[str] = mapped_column("currency", ForeignKey("currency.code"), nullable=False, index=True)
     counterparty_id: Mapped[int] = mapped_column("counterparty", ForeignKey("counterparty.id"), nullable=False, index=True)
