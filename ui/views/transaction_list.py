@@ -3,12 +3,14 @@ from PyQt6.QtWidgets import (
     QHeaderView, QPushButton, QHBoxLayout, QLabel, QDialog,
     QGroupBox, QDateEdit, QComboBox, QMessageBox
 )
-from PyQt6.QtCore import Qt, QDate
+from PyQt6.QtCore import Qt, QDate, pyqtSignal
 from repositories.transaction_repo import TransactionRepository
 from repositories.reference_repo import ReferenceRepository
 from repositories.income_repo import IncomeRepository
 
 class TransactionDetailDialog(QDialog):
+    transaction_deleted = pyqtSignal()
+
     def __init__(self, transaction, parent=None):
         super().__init__(parent)
         self.tx_id = transaction.id
@@ -22,7 +24,6 @@ class TransactionDetailDialog(QDialog):
 
         layout = QVBoxLayout(self)
 
-        discount_text = f" &nbsp;&nbsp;&nbsp; <b style='color:red;'>Discount:</b> - {transaction.discount:.2f}" if transaction.discount else ""
         info_text = (
             f"<b>Date:</b> {transaction.date} &nbsp;&nbsp;&nbsp; "
             f"<b>Receipt No:</b> {transaction.number or 'N/A'} &nbsp;&nbsp;&nbsp; "
@@ -114,10 +115,9 @@ class TransactionDetailDialog(QDialog):
         )
         if reply == QMessageBox.StandardButton.Yes:
             TransactionRepository.delete_transaction(self.tx_id)
-            self.accept()
 
-            if hasattr(self.parent(), 'load_data'):
-                self.parent().load_data()
+            self.transaction_deleted.emit()
+            self.accept()
 
 class TransactionListView(QWidget):
     def __init__(self):
@@ -306,6 +306,7 @@ class TransactionListView(QWidget):
             tx = self.trans_repo.get_transaction_with_items(rec_id)
             if tx:
                 dialog = TransactionDetailDialog(tx, self)
+                dialog.transaction_deleted.connect(self.load_data)
                 dialog.exec()
         else:
             reply = QMessageBox.question(

@@ -38,7 +38,6 @@ CREATE TABLE transaction_record (
 	location INT,
 	date DATE NOT NULL,
 	total_amount DECIMAL(10,2),
-	discount DECIMAL(10,2) DEFAULT 0,
 	
 	CONSTRAINT fk_transaction_paymenttype FOREIGN KEY (payment_type) REFERENCES payment_type(id),
 	CONSTRAINT fk_transaction_counterparty FOREIGN KEY (counterparty) REFERENCES counterparty(id),
@@ -68,6 +67,7 @@ CREATE TABLE item (
 	item_name_override VARCHAR(250),
 	amount DECIMAL(10,3) NOT NULL,
 	price DECIMAL(10,2) NOT NULL,
+	discount DECIMAL(10,2) NOT NULL DEFAULT 0,
 	refund BIT NOT NULL DEFAULT 0,
 	
 	CONSTRAINT fk_item_transaction FOREIGN KEY (transaction_id) REFERENCES transaction_record(id),

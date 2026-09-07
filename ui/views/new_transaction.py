@@ -80,14 +80,18 @@ class NewTransactionView(QWidget):
         self.items_table.setHorizontalHeaderLabels(["Product", "Override", "Amount", "Price", "Discount", "Refund", "Total", ""])
         self.items_table.verticalHeader().setVisible(False)
 
-        self.items_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.items_table.setColumnWidth(1, 120)
-        self.items_table.setColumnWidth(2, 80)
-        self.items_table.setColumnWidth(3, 80)
-        self.items_table.setColumnWidth(4, 80)
-        self.items_table.setColumnWidth(5, 60)
-        self.items_table.setColumnWidth(6, 80)
-        self.items_table.setColumnWidth(7, 40)
+        header = self.items_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)
+
+        self.items_table.setColumnWidth(1, 150)
+
         self.items_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         layout.addWidget(self.items_table)
 
