@@ -1,5 +1,5 @@
-import os
 import sqlite3
+from contextlib import closing
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QListWidget,
     QListWidgetItem, QFormLayout, QLineEdit, QComboBox,
@@ -139,9 +139,9 @@ class DataManagerView(QWidget):
             backup_dir = BASE_DIR / "backups"
             backup_dir.mkdir(exist_ok=True)
             timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            backup_path = os.path.join("backups", f"expense_tracker_{timestamp}.db")
+            backup_path = backup_dir / f"expense_tracker_{timestamp}.db"
 
-            with sqlite3.connect(DB_PATH) as src, sqlite3.connect(backup_path) as dst:
+            with closing(sqlite3.connect(DB_PATH)) as src, closing(sqlite3.connect(backup_path)) as dst:
                 src.backup(dst)
 
             QMessageBox.information(self, "Success", f"Backup created successfully!\n\nLocation: {backup_path}")
@@ -199,7 +199,12 @@ class DataManagerView(QWidget):
             QMessageBox.warning(self, "Error", "Name cannot be empty.")
             return
 
-        self.ref_repo.update_counterparty(cp.id, new_name, cat_id)
+        try:
+            self.ref_repo.update_counterparty(cp.id, new_name, cat_id)
+        except ValueError as e:
+            QMessageBox.warning(self, "Error", str(e))
+            return
+
         QMessageBox.information(self, "Success", "Store updated successfully.")
         self.load_data()
 
@@ -234,20 +239,20 @@ class DataManagerView(QWidget):
             try:
                 self.ref_repo.add_location(cp.id, text.strip())
                 self.load_locations(cp)
-            except IntegrityError:
+            except (ValueError, IntegrityError):
                 QMessageBox.warning(self, "Error", "This location already exists for this store.")
             except Exception as e:
-                QMessageBox.warning(self, "Error", "This location already exists or is invalid.")
+                QMessageBox.critical(self, "Error", f"Could not add location:\n{e}")
 
     def remove_location(self):
         loc_item = self.loc_list.currentItem()
-        if not loc_item: return
+        cp_item = self.cp_list.currentItem()
+        if not loc_item or not cp_item: return
         loc_id = loc_item.data(Qt.ItemDataRole.UserRole)
 
         try:
             self.ref_repo.remove_location(loc_id)
-            cp = self.cp_list.currentItem().data(Qt.ItemDataRole.UserRole)
-            self.load_locations(cp)
+            self.load_locations(cp_item.data(Qt.ItemDataRole.UserRole))
         except ValueError as e:
             QMessageBox.warning(self, "Action Denied", str(e))
 
