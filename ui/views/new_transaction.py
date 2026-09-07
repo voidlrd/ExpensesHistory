@@ -124,7 +124,7 @@ class NewTransactionView(QWidget):
         locations = self.ref_repo.get_locations_for_counterparty(text.strip())
         self.location_input.clear()
 
-        if len(locations) > 1:
+        if len(locations) > 0:
             for loc in locations:
                 self.location_input.addItem(loc.label, userData=loc.id)
             self.location_label.setVisible(True)
