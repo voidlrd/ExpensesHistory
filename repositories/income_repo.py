@@ -42,6 +42,31 @@ class IncomeRepository:
             return session.scalars(stmt).unique().all()
 
     @staticmethod
+    def get_income(income_id):
+        with get_session() as session:
+            stmt = select(IncomeRecord).options(
+                joinedload(IncomeRecord.counterparty),
+                joinedload(IncomeRecord.payment_type)
+            ).where(IncomeRecord.id == income_id)
+            return session.scalar(stmt)
+
+    @staticmethod
+    def update_income(income_id, date, counterparty_name, net_amount, currency_code, payment_type_id):
+        with get_session() as session:
+            income = session.get(IncomeRecord, income_id)
+            if not income:
+                raise ValueError("This income record no longer exists.")
+
+            counterparty = get_or_create_counterparty(session, counterparty_name, "Employer")
+
+            income.counterparty_id = counterparty.id
+            income.date = date
+            income.currency_code = currency_code
+            income.net_amount = Decimal(str(net_amount))
+            income.payment_type_id = payment_type_id
+            session.commit()
+
+    @staticmethod
     def delete_income(income_id):
         with get_session() as session:
             inc = session.get(IncomeRecord, income_id)

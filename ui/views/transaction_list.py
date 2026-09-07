@@ -1,13 +1,14 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem,
     QHeaderView, QPushButton, QHBoxLayout, QLabel, QDialog,
-    QGroupBox, QDateEdit, QComboBox, QMessageBox
+    QGroupBox, QDateEdit, QComboBox, QMessageBox, QFormLayout, QDoubleSpinBox
 )
 from PyQt6.QtGui import QBrush, QColor
 from PyQt6.QtCore import Qt, QDate, pyqtSignal
 from repositories.transaction_repo import TransactionRepository, line_total
 from repositories.reference_repo import ReferenceRepository
 from repositories.income_repo import IncomeRepository
+from ui.views.new_transaction import NewTransactionView
 
 class NumericItem(QTableWidgetItem):
     def __init__(self, value, text=None):
@@ -20,8 +21,126 @@ class NumericItem(QTableWidgetItem):
             return self.value < other.value
         return super().__lt__(other)
 
+class TransactionEditDialog(QDialog):
+    def __init__(self, tx_id, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Edit Transaction")
+        self.resize(1000, 600)
+
+        layout = QVBoxLayout(self)
+        self.form = NewTransactionView(edit_tx_id=tx_id)
+        layout.addWidget(self.form)
+        self.form.transaction_saved.connect(self.accept)
+
+
+class IncomeDetailDialog(QDialog):
+    income_changed = pyqtSignal()
+
+    def __init__(self, income, parent=None):
+        super().__init__(parent)
+        self.income_id = income.id
+        self.ref_repo = ReferenceRepository()
+
+        self.setWindowTitle("Income Details")
+        self.resize(420, 220)
+
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+
+        self.date_input = QDateEdit()
+        self.date_input.setCalendarPopup(True)
+        self.date_input.setDate(QDate(income.date.year, income.date.month, income.date.day))
+
+        self.counterparty_input = QComboBox()
+        self.counterparty_input.setEditable(True)
+        self.counterparty_input.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+
+        self.amount_input = QDoubleSpinBox()
+        self.amount_input.setRange(0.01, 9999999.99)
+        self.amount_input.setDecimals(2)
+        self.amount_input.setValue(float(income.net_amount))
+
+        self.currency_input = QComboBox()
+        self.payment_type_input = QComboBox()
+
+        for cp in self.ref_repo.get_all_counterparties():
+            self.counterparty_input.addItem(cp.name, userData=cp.id)
+        for cur in self.ref_repo.get_all_currencies():
+            self.currency_input.addItem(cur.code, userData=cur.code)
+        for pt in self.ref_repo.get_all_payment_types():
+            self.payment_type_input.addItem(pt.type, userData=pt.id)
+
+        if income.counterparty:
+            self.counterparty_input.setCurrentText(income.counterparty.name)
+        idx = self.currency_input.findData(income.currency_code)
+        if idx >= 0:
+            self.currency_input.setCurrentIndex(idx)
+        idx = self.payment_type_input.findData(income.payment_type_id)
+        if idx >= 0:
+            self.payment_type_input.setCurrentIndex(idx)
+
+        form.addRow("Date:", self.date_input)
+        form.addRow("Source:", self.counterparty_input)
+        form.addRow("Net Amount:", self.amount_input)
+        form.addRow("Currency:", self.currency_input)
+        form.addRow("Payment Type:", self.payment_type_input)
+        layout.addLayout(form)
+
+        btn_layout = QHBoxLayout()
+        delete_btn = QPushButton("Delete Income")
+        delete_btn.setStyleSheet("background-color: #F44336; color: white;")
+        delete_btn.clicked.connect(self.delete_income)
+
+        save_btn = QPushButton("Save Changes")
+        save_btn.setStyleSheet("background-color: #4CAF50; color: white;")
+        save_btn.clicked.connect(self.save_changes)
+
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.reject)
+
+        btn_layout.addWidget(delete_btn)
+        btn_layout.addStretch()
+        btn_layout.addWidget(close_btn)
+        btn_layout.addWidget(save_btn)
+        layout.addLayout(btn_layout)
+
+    def save_changes(self):
+        name = self.counterparty_input.currentText().strip()
+        if not name:
+            QMessageBox.warning(self, "Validation Error", "Please specify the income source.")
+            return
+
+        try:
+            IncomeRepository.update_income(
+                self.income_id,
+                date=self.date_input.date().toPyDate(),
+                counterparty_name=name,
+                net_amount=self.amount_input.value(),
+                currency_code=self.currency_input.currentData(),
+                payment_type_id=self.payment_type_input.currentData()
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Error", "Failed to update income:\n" + str(e))
+            return
+
+        self.income_changed.emit()
+        self.accept()
+
+    def delete_income(self):
+        reply = QMessageBox.question(
+            self, "Confirm Delete",
+            "Delete this income record? This cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            IncomeRepository.delete_income(self.income_id)
+            self.income_changed.emit()
+            self.accept()
+
+
 class TransactionDetailDialog(QDialog):
     transaction_deleted = pyqtSignal()
+    transaction_changed = pyqtSignal()
 
     def __init__(self, transaction, parent=None):
         super().__init__(parent)
@@ -101,14 +220,25 @@ class TransactionDetailDialog(QDialog):
         delete_btn.setStyleSheet("background-color: #F44336; color: white;")
         delete_btn.clicked.connect(self.delete_tx)
 
+        edit_btn = QPushButton("Edit Transaction")
+        edit_btn.setStyleSheet("background-color: #2196F3; color: white;")
+        edit_btn.clicked.connect(self.edit_tx)
+
         close_btn = QPushButton("Close")
         close_btn.clicked.connect(self.accept)
 
         btn_layout.addWidget(delete_btn)
         btn_layout.addStretch()
         btn_layout.addWidget(close_btn)
+        btn_layout.addWidget(edit_btn)
 
         layout.addLayout(btn_layout)
+
+    def edit_tx(self):
+        dialog = TransactionEditDialog(self.tx_id, self)
+        if dialog.exec():
+            self.transaction_changed.emit()
+            self.accept()
 
     def delete_tx(self):
         reply = QMessageBox.question(
@@ -310,13 +440,11 @@ class TransactionListView(QWidget):
             if tx:
                 dialog = TransactionDetailDialog(tx, self)
                 dialog.transaction_deleted.connect(self.load_data)
+                dialog.transaction_changed.connect(self.load_data)
                 dialog.exec()
         else:
-            reply = QMessageBox.question(
-                self, "Delete Income",
-                "Do you want to completely delete this income record? This cannot be undone.",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-            if reply == QMessageBox.StandardButton.Yes:
-                self.income_repo.delete_income(rec_id)
-                self.load_data()
+            income = self.income_repo.get_income(rec_id)
+            if income:
+                dialog = IncomeDetailDialog(income, self)
+                dialog.income_changed.connect(self.load_data)
+                dialog.exec()
