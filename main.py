@@ -1,8 +1,6 @@
 import sys
 import os
 from PyQt6.QtWidgets import QApplication
-from database.engine import init_db, seed_initial_data
-from ui.main_window import MainWindow
 
 def _setup_working_directory():
     if getattr(sys, 'frozen', False):
@@ -15,16 +13,32 @@ def _setup_working_directory():
 def main():
     _setup_working_directory()
 
-    init_db()
-    seed_initial_data()
+    from app_logging import setup_logging, install_excepthook, log
+    log_path = setup_logging()
+    install_excepthook()
+    log.info("starting up; logging to %s", log_path)
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
+    try:
+        from database.engine import init_db, seed_initial_data
+        init_db()
+        seed_initial_data()
+    except Exception:
+        log.exception("database initialisation failed")
+        from PyQt6.QtWidgets import QMessageBox
+        QMessageBox.critical(
+            None, "Database Error",
+            f"The database could not be prepared.\n\nSee {log_path} for details."
+        )
+        return 1
+
+    from ui.main_window import MainWindow
     window = MainWindow()
     window.show()
 
-    sys.exit(app.exec())
+    return app.exec()
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
