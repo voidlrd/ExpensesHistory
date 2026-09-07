@@ -241,10 +241,13 @@ class DataManagerView(QWidget):
         loc_item = self.loc_list.currentItem()
         if not loc_item: return
         loc_id = loc_item.data(Qt.ItemDataRole.UserRole)
-        self.ref_repo.remove_location(loc_id)
 
-        cp = self.cp_list.currentItem().data(Qt.ItemDataRole.UserRole)
-        self.load_locations(cp)
+        try:
+            self.ref_repo.remove_location(loc_id)
+            cp = self.cp_list.currentItem().data(Qt.ItemDataRole.UserRole)
+            self.load_locations(cp)
+        except ValueError as e:
+            QMessageBox.warning(self, "Action Denied", str(e))
 
     def on_prod_selected(self, current, previous):
         if not current: return

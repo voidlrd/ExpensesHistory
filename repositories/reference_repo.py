@@ -59,9 +59,14 @@ class ReferenceRepository:
 
     @staticmethod
     def remove_location(loc_id):
+        from database.models import TransactionRecord
         with get_session() as session:
             loc = session.get(CounterpartyLocation, loc_id)
             if loc:
+                in_use = session.scalar(select(TransactionRecord).where(TransactionRecord.location_id == loc_id))
+                if in_use:
+                    raise ValueError("Cannot delete this location because it is linked to past transactions.")
+                
                 session.delete(loc)
                 session.commit()
 
