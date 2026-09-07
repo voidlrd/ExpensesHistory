@@ -72,7 +72,8 @@ class TransactionRepository:
                 select(TransactionRecord)
                 .options(
                     joinedload(TransactionRecord.counterparty),
-                    joinedload(TransactionRecord.payment_type)
+                    joinedload(TransactionRecord.payment_type),
+                    joinedload(TransactionRecord.location)
                 )
             )
 
@@ -94,7 +95,8 @@ class TransactionRepository:
             stmt = select(TransactionRecord).options(
                 joinedload(TransactionRecord.counterparty),
                 joinedload(TransactionRecord.payment_type),
-                joinedload(TransactionRecord.items).joinedload(Item.product)
+                joinedload(TransactionRecord.location),
+                joinedload(TransactionRecord.items).joinedload(Item.product).joinedload(Product.category)
             ).where(TransactionRecord.id == tx_id)
             return session.scalar(stmt)
 

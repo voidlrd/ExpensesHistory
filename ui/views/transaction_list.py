@@ -14,8 +14,11 @@ class TransactionDetailDialog(QDialog):
         self.tx_id = transaction.id
 
         counterparty_name = transaction.counterparty.name if transaction.counterparty else "Unknown"
+        if transaction.location:
+            counterparty_name += f" ({transaction.location.label})"
+
         self.setWindowTitle(f"Receipt Details - {counterparty_name}")
-        self.resize(600, 400)
+        self.resize(800, 450)
 
         layout = QVBoxLayout(self)
 
@@ -30,10 +33,17 @@ class TransactionDetailDialog(QDialog):
         info_label.setStyleSheet("font-size: 14px; margin-bottom: 10px;")
         layout.addWidget(info_label)
 
-        self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["Product", "Amount", "Price", "Row Total"])
+        self.table = QTableWidget(0, 7)
+        self.table.setHorizontalHeaderLabels(["Product", "Category", "Brand", "Amount", "Unit", "Price", "Row Total"])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.table.setColumnWidth(1, 120)
+        self.table.setColumnWidth(2, 100)
+        self.table.setColumnWidth(3, 70)
+        self.table.setColumnWidth(4, 60)
+        self.table.setColumnWidth(5, 70)
+        self.table.setColumnWidth(6, 80)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.setAlternatingRowColors(True)
 
         for row_idx, item in enumerate(transaction.items):
             self.table.insertRow(row_idx)
@@ -42,13 +52,22 @@ class TransactionDetailDialog(QDialog):
             display_name = f"{item.item_name_override} ({base_name})" if item.item_name_override else base_name
             self.table.setItem(row_idx, 0, QTableWidgetItem(display_name))
 
+            cat_name = item.product.category.name if (item.product and item.product.category) else ""
+            self.table.setItem(row_idx, 1, QTableWidgetItem(cat_name))
+
+            brand_name = item.product.brand if item.product else ""
+            self.table.setItem(row_idx, 2, QTableWidgetItem(brand_name))
+
             amount_item = QTableWidgetItem(f"{item.amount:.3f}")
             amount_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            self.table.setItem(row_idx, 1, amount_item)
+            self.table.setItem(row_idx, 3, amount_item)
+
+            unit_name = item.product.unit_of_measure if item.product else ""
+            self.table.setItem(row_idx, 4, QTableWidgetItem(unit_name))
 
             price_item = QTableWidgetItem(f"{item.price:.2f}")
             price_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            self.table.setItem(row_idx, 2, price_item)
+            self.table.setItem(row_idx, 5, price_item)
 
             row_total = item.amount * item.price
             if item.refund:
@@ -56,7 +75,7 @@ class TransactionDetailDialog(QDialog):
 
             total_item = QTableWidgetItem(f"{row_total:.2f}")
             total_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            self.table.setItem(row_idx, 3, total_item)
+            self.table.setItem(row_idx, 6, total_item)
 
         layout.addWidget(self.table)
 
@@ -221,7 +240,11 @@ class TransactionListView(QWidget):
                 date_item.setData(Qt.ItemDataRole.UserRole + 1, "expense")
                 self.table.setItem(row_idx, 0, date_item)
 
-                cp_item = QTableWidgetItem(tx.counterparty.name if tx.counterparty else "Unknown")
+                cp_name = tx.counterparty.name if tx.counterparty else "Unknown"
+                if tx.location:
+                    cp_name += f" ({tx.location.label})"
+
+                cp_item = QTableWidgetItem(cp_name)
                 self.table.setItem(row_idx, 1, cp_item)
 
                 receipt_item = QTableWidgetItem(tx.number or "")
