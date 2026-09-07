@@ -37,13 +37,20 @@ class DataManagerView(QWidget):
         self.cp_name_input = QLineEdit()
         self.cp_cat_input = QComboBox()
 
+        cp_btn_layout = QHBoxLayout()
+        self.cp_hide_btn = QPushButton("Hide/Archive")
+        self.cp_hide_btn.clicked.connect(self.toggle_hide_cp)
+
         self.cp_save_btn = QPushButton("Save Changes")
         self.cp_save_btn.setStyleSheet("background-color: #4CAF50; color: white;")
         self.cp_save_btn.clicked.connect(self.save_cp_changes)
 
+        cp_btn_layout.addWidget(self.cp_hide_btn)
+        cp_btn_layout.addWidget(self.cp_save_btn)
+
         cp_form_layout.addRow("Name:", self.cp_name_input)
         cp_form_layout.addRow("Category:", self.cp_cat_input)
-        cp_form_layout.addRow("", self.cp_save_btn)
+        cp_form_layout.addRow("", cp_btn_layout)
         cp_right_panel.addWidget(cp_form_group)
 
         self.loc_group = QGroupBox("Manage Locations")
