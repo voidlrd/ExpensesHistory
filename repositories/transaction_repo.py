@@ -115,3 +115,18 @@ class TransactionRepository:
             if last_tx:
                 return last_tx.payment_type_id, last_tx.currency_code
             return None, None
+
+    @staticmethod
+    def check_potential_duplicate(tx_date, counterparty_name, final_amount):
+        with get_session() as session:
+            final_dec = Decimal(str(final_amount))
+
+            stmt = (
+                select(TransactionRecord)
+                .join(TransactionRecord.counterparty)
+                .where(TransactionRecord.date == tx_date)
+                .where(TransactionRecord.total_amount == final_dec)
+                .where(func.lower(Counterparty.name) == counterparty_name.lower())
+            )
+
+            return session.scalar(stmt) is not None

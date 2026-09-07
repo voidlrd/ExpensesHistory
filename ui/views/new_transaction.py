@@ -94,6 +94,10 @@ class NewTransactionView(QWidget):
         self.discount_input.setDecimals(2)
         self.discount_input.valueChanged.connect(self.calculate_totals)
 
+        self.duplicate_warning_label = QLabel("⚠️ Duplicate Detected!")
+        self.duplicate_warning_label.setStyleSheet("color: #F44336; font-weight: bold; font-size: 14px;")
+        self.duplicate_warning_label.setVisible(False)
+
         self.total_label = QLabel("Total: 0.00")
         self.total_label.setStyleSheet("font-weight: bold; font-size: 16px;")
 
@@ -105,10 +109,14 @@ class NewTransactionView(QWidget):
         footer_layout.addWidget(QLabel("Discount:"))
         footer_layout.addWidget(self.discount_input)
         footer_layout.addSpacing(20)
+        footer_layout.addWidget(self.duplicate_warning_label)
+        footer_layout.addSpacing(10)
         footer_layout.addWidget(self.total_label)
         footer_layout.addWidget(self.save_btn)
 
         layout.addLayout(footer_layout)
+
+        self.date_input.dateChanged.connect(self.check_for_duplicate)
 
         self.add_empty_row()
 
@@ -124,6 +132,8 @@ class NewTransactionView(QWidget):
         else:
             self.location_label.setVisible(False)
             self.location_input.setVisible(False)
+
+        self.check_for_duplicate()
 
     def load_reference_data(self):
         curr_currency = self.currency_input.currentData()
@@ -235,7 +245,7 @@ class NewTransactionView(QWidget):
                 self.calculate_totals()
                 break
 
-    def calculate_totals(self):
+    def calculate_totals(self, *args):
         raw_total = 0.0
 
         for row in range(self.items_table.rowCount()):
@@ -259,6 +269,26 @@ class NewTransactionView(QWidget):
         grand_total = raw_total - self.discount_input.value()
         self.total_label.setText(f"Total: {grand_total:.2f}")
 
+        self.check_for_duplicate()
+
+    def check_for_duplicate(self):
+        counterparty_name = self.counterparty_input.currentText().strip()
+
+        total_text = self.total_label.text().replace("Total: ", "")
+        try:
+            final_amount = float(total_text)
+        except ValueError:
+            final_amount = 0.0
+
+        if not counterparty_name or final_amount <= 0:
+            self.duplicate_warning_label.setVisible(False)
+            return
+
+        date = self.date_input.date().toPyDate()
+
+        is_duplicate = TransactionRepository.check_potential_duplicate(date, counterparty_name, final_amount)
+        self.duplicate_warning_label.setVisible(is_duplicate)
+
     def save_transaction(self):
         counterparty_name = self.counterparty_input.currentText().strip()
         if not counterparty_name:
@@ -266,6 +296,8 @@ class NewTransactionView(QWidget):
             return
 
         items_data = []
+        raw_total = 0.0
+
         for row in range(self.items_table.rowCount()):
             product_cb = self.items_table.cellWidget(row, 0)
             override_le = self.items_table.cellWidget(row, 1)
@@ -280,13 +312,23 @@ class NewTransactionView(QWidget):
             if not product_name:
                 continue
 
+            amount = amount_sb.value()
+            price = price_sb.value()
+            is_refund = refund_widget.refund_cb.isChecked()
+
             items_data.append({
                 "product_name": product_name,
                 "override": override_le.text().strip() or None,
-                "amount": amount_sb.value(),
-                "price": price_sb.value(),
-                "refund": refund_widget.refund_cb.isChecked()
+                "amount": amount,
+                "price": price,
+                "refund": is_refund
             })
+
+            line_total = amount * price
+            if is_refund:
+                raw_total -= line_total
+            else:
+                raw_total += line_total
 
         if not items_data:
             QMessageBox.warning(self, "Validation Error", "Please add at least one valid item.")
@@ -298,9 +340,24 @@ class NewTransactionView(QWidget):
         currency_code = self.currency_input.currentData()
         discount = self.discount_input.value()
 
+        final_amount = raw_total - discount
+
         location_id = None
         if self.location_input.isVisible() and self.location_input.count() > 0:
             location_id = self.location_input.currentData()
+
+        is_duplicate = TransactionRepository.check_potential_duplicate(date, counterparty_name, final_amount)
+        if is_duplicate:
+            reply = QMessageBox.question(
+                self,
+                "Potential Duplicate Detected",
+                f"A transaction at '{counterparty_name}' for {final_amount:.2f} on {date} already exists.\n\n"
+                "Are you sure this is a new, separate receipt and not the credit card copy of the same purchase?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.No:
+                return
 
         try:
             TransactionRepository.save_transaction(
