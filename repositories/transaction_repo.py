@@ -9,16 +9,42 @@ def line_total(amount, price, discount, refund):
     total = (Decimal(str(amount)) * Decimal(str(price))) - Decimal(str(discount))
     return -total if refund else total
 
+def _write_items(session, transaction, items_data):
+    products = {p.name.casefold(): p for p in session.scalars(select(Product))}
+
+    for item_data in items_data:
+        product_name = item_data["product_name"]
+        product = products.get(product_name.casefold())
+
+        if not product:
+            product = Product(name=product_name)
+            session.add(product)
+            session.flush()
+            products[product_name.casefold()] = product
+
+        session.add(Item(
+            transaction_id=transaction.id,
+            product_id=product.id,
+            item_name_override=item_data["override"],
+            amount=Decimal(str(item_data["amount"])),
+            price=Decimal(str(item_data["price"])),
+            discount=Decimal(str(item_data["discount"])),
+            refund=item_data["refund"]
+        ))
+
+
+def _total_of(items_data):
+    return sum(
+        (line_total(i["amount"], i["price"], i["discount"], i["refund"]) for i in items_data),
+        Decimal(0)
+    )
+
+
 class TransactionRepository:
     @staticmethod
     def save_transaction(date, counterparty_name, receipt_no, payment_type_id, currency_code, items_data, location_id=None):
         with get_session() as session:
             counterparty = get_or_create_counterparty(session, counterparty_name, "Supermarket")
-
-            final_amount = sum(
-                (line_total(i["amount"], i["price"], i["discount"], i["refund"]) for i in items_data),
-                Decimal(0)
-            )
 
             transaction = TransactionRecord(
                 number=receipt_no,
@@ -27,33 +53,37 @@ class TransactionRepository:
                 counterparty_id=counterparty.id,
                 location_id=location_id,
                 date=date,
-                total_amount=final_amount
+                total_amount=_total_of(items_data)
             )
             session.add(transaction)
             session.flush()
 
-            products = {p.name.casefold(): p for p in session.scalars(select(Product))}
+            _write_items(session, transaction, items_data)
+            session.commit()
 
-            for item_data in items_data:
-                product_name = item_data["product_name"]
-                product = products.get(product_name.casefold())
+    @staticmethod
+    def update_transaction(tx_id, date, counterparty_name, receipt_no, payment_type_id,
+                           currency_code, items_data, location_id=None):
+        with get_session() as session:
+            transaction = session.get(TransactionRecord, tx_id)
+            if not transaction:
+                raise ValueError("This transaction no longer exists.")
 
-                if not product:
-                    product = Product(name=product_name)
-                    session.add(product)
-                    session.flush()
-                    products[product_name.casefold()] = product
+            counterparty = get_or_create_counterparty(session, counterparty_name, "Supermarket")
 
-                session.add(Item(
-                    transaction_id=transaction.id,
-                    product_id=product.id,
-                    item_name_override=item_data["override"],
-                    amount=Decimal(str(item_data["amount"])),
-                    price=Decimal(str(item_data["price"])),
-                    discount=Decimal(str(item_data["discount"])),
-                    refund=item_data["refund"]
-                ))
+            transaction.number = receipt_no
+            transaction.payment_type_id = payment_type_id
+            transaction.currency_code = currency_code
+            transaction.counterparty_id = counterparty.id
+            transaction.location_id = location_id
+            transaction.date = date
+            transaction.total_amount = _total_of(items_data)
 
+            for item in list(transaction.items):
+                session.delete(item)
+            session.flush()
+
+            _write_items(session, transaction, items_data)
             session.commit()
 
     @staticmethod
@@ -110,7 +140,7 @@ class TransactionRepository:
             return None, None
 
     @staticmethod
-    def check_potential_duplicate(tx_date, counterparty_name, final_amount, currency_code=None):
+    def check_potential_duplicate(tx_date, counterparty_name, final_amount, currency_code=None, exclude_id=None):
         with get_session() as session:
             counterparty = find_counterparty(session, counterparty_name)
             if not counterparty:
@@ -124,5 +154,7 @@ class TransactionRepository:
             )
             if currency_code:
                 stmt = stmt.where(TransactionRecord.currency_code == currency_code)
+            if exclude_id:
+                stmt = stmt.where(TransactionRecord.id != exclude_id)
 
             return session.scalar(stmt) is not None

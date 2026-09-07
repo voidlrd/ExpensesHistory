@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QMessageBox, QCompleter, QCheckBox
 )
 from PyQt6.QtGui import QKeySequence, QShortcut
-from PyQt6.QtCore import QDate, Qt, QTimer
+from PyQt6.QtCore import QDate, Qt, QTimer, pyqtSignal
 from decimal import Decimal
 from repositories.reference_repo import ReferenceRepository
 from repositories.product_repo import ProductRepository
@@ -23,11 +23,14 @@ class FastTabSpinBox(QDoubleSpinBox):
         super().keyPressEvent(event)
 
 class NewTransactionView(QWidget):
-    def __init__(self):
+    transaction_saved = pyqtSignal()
+
+    def __init__(self, edit_tx_id=None):
         super().__init__()
         self.ref_repo = ReferenceRepository()
         self.product_repo = ProductRepository()
 
+        self.edit_tx_id = edit_tx_id
         self.products = []
         self.raw_total = Decimal(0)
 
@@ -43,7 +46,11 @@ class NewTransactionView(QWidget):
 
         self.setup_ui()
         self.load_reference_data()
-        self.apply_smart_defaults()
+
+        if self.edit_tx_id:
+            self.load_transaction(self.edit_tx_id)
+        else:
+            self.apply_smart_defaults()
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
@@ -114,7 +121,8 @@ class NewTransactionView(QWidget):
         self.total_label = QLabel("Total: 0.00")
         self.total_label.setStyleSheet("font-weight: bold; font-size: 16px;")
 
-        self.save_btn = QPushButton("Save Transaction (Ctrl+S)")
+        save_text = "Update Transaction (Ctrl+S)" if self.edit_tx_id else "Save Transaction (Ctrl+S)"
+        self.save_btn = QPushButton(save_text)
         self.save_btn.setStyleSheet("background-color: #4CAF50; color: white; padding: 5px 15px;")
         self.save_btn.clicked.connect(self.save_transaction)
 
@@ -188,6 +196,47 @@ class NewTransactionView(QWidget):
 
         if curr_cp:
             self.counterparty_input.setCurrentText(curr_cp)
+
+    def load_transaction(self, tx_id):
+        tx = TransactionRepository.get_transaction_with_items(tx_id)
+        if not tx:
+            QMessageBox.warning(self, "Error", "This transaction no longer exists.")
+            return
+
+        self.date_input.setDate(QDate(tx.date.year, tx.date.month, tx.date.day))
+        self.receipt_number_input.setText(tx.number or "")
+
+        if tx.counterparty:
+            self.counterparty_input.setCurrentText(tx.counterparty.name)
+        self._reload_locations()
+        if tx.location_id:
+            idx = self.location_input.findData(tx.location_id)
+            if idx >= 0:
+                self.location_input.setCurrentIndex(idx)
+
+        idx = self.payment_type_input.findData(tx.payment_type_id)
+        if idx >= 0:
+            self.payment_type_input.setCurrentIndex(idx)
+        idx = self.currency_input.findData(tx.currency_code)
+        if idx >= 0:
+            self.currency_input.setCurrentIndex(idx)
+
+        self.items_table.setRowCount(0)
+        for item in tx.items:
+            self.add_empty_row()
+            row = self.items_table.rowCount() - 1
+            name = item.product.name if item.product else ""
+            self.items_table.cellWidget(row, 0).setCurrentText(name)
+            self.items_table.cellWidget(row, 1).setText(item.item_name_override or "")
+            self.items_table.cellWidget(row, 2).setValue(float(item.amount))
+            self.items_table.cellWidget(row, 3).setValue(float(item.price))
+            self.items_table.cellWidget(row, 4).setValue(float(item.discount))
+            self.items_table.cellWidget(row, 5).refund_cb.setChecked(item.refund)
+
+        if self.items_table.rowCount() == 0:
+            self.add_empty_row()
+
+        self.calculate_totals()
 
     def apply_smart_defaults(self):
         last_pt, last_cur = TransactionRepository.get_last_used_defaults()
@@ -316,7 +365,8 @@ class NewTransactionView(QWidget):
             self.date_input.date().toPyDate(),
             counterparty_name,
             self.raw_total,
-            self.currency_input.currentData()
+            self.currency_input.currentData(),
+            exclude_id=self.edit_tx_id
         )
         self.duplicate_warning_label.setVisible(is_duplicate)
 
@@ -394,7 +444,7 @@ class NewTransactionView(QWidget):
         final_amount = self.raw_total
 
         is_duplicate = TransactionRepository.check_potential_duplicate(
-            date, counterparty_name, final_amount, currency_code)
+            date, counterparty_name, final_amount, currency_code, exclude_id=self.edit_tx_id)
         if is_duplicate:
             reply = QMessageBox.question(
                 self,
@@ -408,17 +458,32 @@ class NewTransactionView(QWidget):
                 return
 
         try:
-            TransactionRepository.save_transaction(
-                date=date,
-                counterparty_name=counterparty_name,
-                receipt_no=receipt_no,
-                payment_type_id=payment_type_id,
-                currency_code=currency_code,
-                items_data=items_data,
-                location_id=location_id
-            )
-            QMessageBox.information(self, "Success", "Transaction saved successfully!")
-            self.reset_form()
+            if self.edit_tx_id:
+                TransactionRepository.update_transaction(
+                    self.edit_tx_id,
+                    date=date,
+                    counterparty_name=counterparty_name,
+                    receipt_no=receipt_no,
+                    payment_type_id=payment_type_id,
+                    currency_code=currency_code,
+                    items_data=items_data,
+                    location_id=location_id
+                )
+                QMessageBox.information(self, "Success", "Transaction updated successfully!")
+                self.transaction_saved.emit()
+            else:
+                TransactionRepository.save_transaction(
+                    date=date,
+                    counterparty_name=counterparty_name,
+                    receipt_no=receipt_no,
+                    payment_type_id=payment_type_id,
+                    currency_code=currency_code,
+                    items_data=items_data,
+                    location_id=location_id
+                )
+                QMessageBox.information(self, "Success", "Transaction saved successfully!")
+                self.transaction_saved.emit()
+                self.reset_form()
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save transaction:\n{str(e)}")
