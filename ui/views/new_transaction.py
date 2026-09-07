@@ -218,6 +218,7 @@ class NewTransactionView(QWidget):
         self.items_table.setCellWidget(row_idx, 3, price_sb)
 
         refund_cb = QCheckBox()
+        refund_cb.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         refund_cb.stateChanged.connect(self.calculate_totals)
         chk_widget = QWidget()
         chk_layout = QHBoxLayout(chk_widget)
@@ -232,6 +233,7 @@ class NewTransactionView(QWidget):
         self.items_table.setCellWidget(row_idx, 5, row_total_lbl)
 
         del_btn = QPushButton("X")
+        del_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         del_btn.setStyleSheet("color: red; font-weight: bold; max-width: 30px;")
         del_btn.clicked.connect(lambda checked, b=del_btn: self.remove_row(b))
         self.items_table.setCellWidget(row_idx, 6, del_btn)
