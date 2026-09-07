@@ -25,6 +25,7 @@ class NewIncomeView(QWidget):
 
         self.counterparty_input = QComboBox()
         self.counterparty_input.setEditable(True)
+        self.counterparty_input.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self.counterparty_input.setPlaceholderText("Type or select employer/person...")
 
         self.amount_input = QDoubleSpinBox()

@@ -4,10 +4,12 @@ from PyQt6.QtWidgets import (
     QTableWidget, QHeaderView, QLabel, QDoubleSpinBox,
     QMessageBox, QCompleter, QCheckBox
 )
-from PyQt6.QtCore import QDate, Qt
+from PyQt6.QtGui import QKeySequence, QShortcut
+from PyQt6.QtCore import QDate, Qt, QTimer
+from decimal import Decimal
 from repositories.reference_repo import ReferenceRepository
 from repositories.product_repo import ProductRepository
-from repositories.transaction_repo import TransactionRepository
+from repositories.transaction_repo import TransactionRepository, line_total
 
 class FastTabSpinBox(QDoubleSpinBox):
     def __init__(self, add_row_callback, *args, **kwargs):
@@ -20,19 +22,24 @@ class FastTabSpinBox(QDoubleSpinBox):
             return
         super().keyPressEvent(event)
 
-    def focusNextPrevChild(self, next_widget):
-        if next_widget:
-            self.add_row_callback()
-            return True
-        return super().focusNextPrevChild(next_widget)
-
 class NewTransactionView(QWidget):
     def __init__(self):
         super().__init__()
         self.ref_repo = ReferenceRepository()
         self.product_repo = ProductRepository()
 
-        self.products = self.product_repo.get_all_products()
+        self.products = []
+        self.raw_total = Decimal(0)
+
+        self._dup_timer = QTimer(self)
+        self._dup_timer.setSingleShot(True)
+        self._dup_timer.setInterval(250)
+        self._dup_timer.timeout.connect(self._run_duplicate_check)
+
+        self._loc_timer = QTimer(self)
+        self._loc_timer.setSingleShot(True)
+        self._loc_timer.setInterval(250)
+        self._loc_timer.timeout.connect(self._reload_locations)
 
         self.setup_ui()
         self.load_reference_data()
@@ -49,13 +56,13 @@ class NewTransactionView(QWidget):
 
         self.counterparty_input = QComboBox()
         self.counterparty_input.setEditable(True)
+        self.counterparty_input.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self.counterparty_input.setPlaceholderText("Type or select store/person...")
 
         cp_completer = QCompleter(self.counterparty_input.model())
         cp_completer.setFilterMode(Qt.MatchFlag.MatchContains)
         cp_completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
         self.counterparty_input.setCompleter(cp_completer)
-        self.counterparty_input.currentTextChanged.connect(self.on_counterparty_changed)
 
         self.location_input = QComboBox()
         self.location_input.setVisible(False)
@@ -120,23 +127,36 @@ class NewTransactionView(QWidget):
         layout.addLayout(footer_layout)
 
         self.date_input.dateChanged.connect(self.check_for_duplicate)
+        self.currency_input.currentIndexChanged.connect(self.check_for_duplicate)
+        self.counterparty_input.currentTextChanged.connect(self.on_counterparty_changed)
+
+        save_shortcut = QShortcut(QKeySequence.StandardKey.Save, self)
+        save_shortcut.activated.connect(self.save_transaction)
 
         self.add_empty_row()
 
     def on_counterparty_changed(self, text):
-        locations = self.ref_repo.get_locations_for_counterparty(text.strip())
-        self.location_input.clear()
-
-        if len(locations) > 0:
-            for loc in locations:
-                self.location_input.addItem(loc.label, userData=loc.id)
-            self.location_label.setVisible(True)
-            self.location_input.setVisible(True)
-        else:
-            self.location_label.setVisible(False)
-            self.location_input.setVisible(False)
-
+        self._loc_timer.start()
         self.check_for_duplicate()
+
+    def _reload_locations(self):
+        name = self.counterparty_input.currentText().strip()
+        previous = self.location_input.currentData()
+        locations = self.ref_repo.get_locations_for_counterparty(name)
+
+        self.location_input.blockSignals(True)
+        self.location_input.clear()
+        for loc in locations:
+            self.location_input.addItem(loc.label, userData=loc.id)
+        if previous:
+            idx = self.location_input.findData(previous)
+            if idx >= 0:
+                self.location_input.setCurrentIndex(idx)
+        self.location_input.blockSignals(False)
+
+        has_locations = bool(locations)
+        self.location_label.setVisible(has_locations)
+        self.location_input.setVisible(has_locations)
 
     def load_reference_data(self):
         curr_currency = self.currency_input.currentData()
@@ -183,7 +203,7 @@ class NewTransactionView(QWidget):
 
         if row_count > 0:
             last_product_cb = self.items_table.cellWidget(row_count - 1, 0)
-            if last_product_cb and not last_product_cb.currentText().strip():
+            if last_product_cb is not None and not last_product_cb.currentText().strip():
                 last_product_cb.setFocus()
                 return
 
@@ -192,6 +212,7 @@ class NewTransactionView(QWidget):
 
         product_cb = QComboBox()
         product_cb.setEditable(True)
+        product_cb.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         product_cb.setPlaceholderText("Type product name...")
 
         prod_completer = QCompleter(product_cb.model())
@@ -228,7 +249,7 @@ class NewTransactionView(QWidget):
 
         refund_cb = QCheckBox()
         refund_cb.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        refund_cb.stateChanged.connect(self.calculate_totals)
+        refund_cb.checkStateChanged.connect(self.calculate_totals)
         chk_widget = QWidget()
         chk_layout = QHBoxLayout(chk_widget)
         chk_layout.addWidget(refund_cb)
@@ -251,13 +272,13 @@ class NewTransactionView(QWidget):
 
     def remove_row(self, btn):
         for row in range(self.items_table.rowCount()):
-            if self.items_table.cellWidget(row, 6) == btn:
+            if self.items_table.cellWidget(row, 7) == btn:
                 self.items_table.removeRow(row)
                 self.calculate_totals()
                 break
 
     def calculate_totals(self, *args):
-        raw_total = 0.0
+        raw_total = Decimal(0)
 
         for row in range(self.items_table.rowCount()):
             amount_widget = self.items_table.cellWidget(row, 2)
@@ -266,49 +287,62 @@ class NewTransactionView(QWidget):
             refund_widget = self.items_table.cellWidget(row, 5)
             total_label = self.items_table.cellWidget(row, 6)
 
-            if amount_widget and price_widget and total_label and refund_widget:
-                amount = amount_widget.value()
-                price = price_widget.value()
-                disc = disc_widget.value()
-                is_refund = refund_widget.refund_cb.isChecked()
-
-                row_total = (amount * price) - disc
-                if is_refund:
-                    row_total = -row_total
-
+            if None not in (amount_widget, price_widget, disc_widget, total_label, refund_widget):
+                row_total = line_total(
+                    amount_widget.value(),
+                    price_widget.value(),
+                    disc_widget.value(),
+                    refund_widget.refund_cb.isChecked()
+                )
                 total_label.setText(f"{row_total:.2f}")
                 raw_total += row_total
 
+        self.raw_total = raw_total
         self.total_label.setText(f"Total: {raw_total:.2f}")
 
         self.check_for_duplicate()
 
     def check_for_duplicate(self):
+        self._dup_timer.start()
+
+    def _run_duplicate_check(self):
         counterparty_name = self.counterparty_input.currentText().strip()
 
-        total_text = self.total_label.text().replace("Total: ", "")
-        try:
-            final_amount = float(total_text)
-        except ValueError:
-            final_amount = 0.0
-
-        if not counterparty_name or final_amount <= 0:
+        if not counterparty_name or self.raw_total == 0:
             self.duplicate_warning_label.setVisible(False)
             return
 
-        date = self.date_input.date().toPyDate()
-
-        is_duplicate = TransactionRepository.check_potential_duplicate(date, counterparty_name, final_amount)
+        is_duplicate = TransactionRepository.check_potential_duplicate(
+            self.date_input.date().toPyDate(),
+            counterparty_name,
+            self.raw_total,
+            self.currency_input.currentData()
+        )
         self.duplicate_warning_label.setVisible(is_duplicate)
 
+    def _commit_pending_edits(self):
+        # A combo popup steals the click that triggers Save; settle editors first.
+        focused = self.focusWidget()
+        if isinstance(focused, QComboBox) and focused.completer():
+            focused.completer().popup().hide()
+        for row in range(self.items_table.rowCount()):
+            for col in (2, 3, 4):
+                widget = self.items_table.cellWidget(row, col)
+                if widget is not None:
+                    widget.interpretText()
+
     def save_transaction(self):
+        self._commit_pending_edits()
+        self.calculate_totals()
+
         counterparty_name = self.counterparty_input.currentText().strip()
         if not counterparty_name:
             QMessageBox.warning(self, "Validation Error", "Please specify a counterparty (e.g. store name).")
+            self.counterparty_input.setFocus()
             return
 
         items_data = []
-        raw_total = 0.0
+        blank_rows = 0
 
         for row in range(self.items_table.rowCount()):
             product_cb = self.items_table.cellWidget(row, 0)
@@ -318,11 +352,13 @@ class NewTransactionView(QWidget):
             disc_sb = self.items_table.cellWidget(row, 4)
             refund_widget = self.items_table.cellWidget(row, 5)
 
-            if not product_cb:
+            # never test a QComboBox for truth: PyQt maps __len__ to count()
+            if None in (product_cb, override_le, amount_sb, price_sb, disc_sb, refund_widget):
                 continue
 
             product_name = product_cb.currentText().strip()
             if not product_name:
+                blank_rows += 1
                 continue
 
             items_data.append({
@@ -335,7 +371,15 @@ class NewTransactionView(QWidget):
             })
 
         if not items_data:
-            QMessageBox.warning(self, "Validation Error", "Please add at least one valid item.")
+            if blank_rows:
+                message = (f"{blank_rows} item row(s) have no product name.\n\n"
+                           "Type a product name in the first column before saving.")
+            else:
+                message = "Please add at least one item row."
+            QMessageBox.warning(self, "Validation Error", message)
+            first_row_cb = self.items_table.cellWidget(0, 0)
+            if first_row_cb is not None:
+                first_row_cb.setFocus()
             return
 
         date = self.date_input.date().toPyDate()
@@ -344,13 +388,13 @@ class NewTransactionView(QWidget):
         currency_code = self.currency_input.currentData()
 
         location_id = None
-        if self.location_input.isVisible() and self.location_input.count() > 0:
+        if self.location_input.count() > 0 and self.location_input.isVisibleTo(self):
             location_id = self.location_input.currentData()
 
-        total_text = self.total_label.text().replace("Total: ", "")
-        final_amount = float(total_text)
+        final_amount = self.raw_total
 
-        is_duplicate = TransactionRepository.check_potential_duplicate(date, counterparty_name, final_amount)
+        is_duplicate = TransactionRepository.check_potential_duplicate(
+            date, counterparty_name, final_amount, currency_code)
         if is_duplicate:
             reply = QMessageBox.question(
                 self,
@@ -384,7 +428,6 @@ class NewTransactionView(QWidget):
         self.items_table.setRowCount(0)
         self.date_input.setDate(QDate.currentDate())
 
-        self.products = self.product_repo.get_all_products()
         self.load_reference_data()
         self.apply_smart_defaults()
         self.add_empty_row()
