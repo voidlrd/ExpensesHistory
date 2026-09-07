@@ -16,6 +16,29 @@ class ReportsRepository:
         return date(y, m, 1), date(y, m, last_day)
 
     @staticmethod
+    def get_available_years():
+        with get_session() as session:
+            min_tx = session.scalar(select(func.min(TransactionRecord.date)))
+            max_tx = session.scalar(select(func.max(TransactionRecord.date)))
+            min_inc = session.scalar(select(func.min(IncomeRecord.date)))
+            max_inc = session.scalar(select(func.max(IncomeRecord.date)))
+
+            dates = [d for d in [min_tx, max_tx, min_inc, max_inc] if d is not None]
+
+            curr_year = date.today().year
+
+            if not dates:
+                return [curr_year]
+
+            min_year = min(d.year for d in dates)
+            max_year = max(d.year for d in dates)
+
+            min_year = min(min_year, curr_year)
+            max_year = max(max_year, curr_year)
+
+            return list(range(min_year, max_year + 1))
+
+    @staticmethod
     def get_month_summary(currency_code, year=None, month=None):
         start_date, end_date = ReportsRepository._get_month_bounds(year, month)
 

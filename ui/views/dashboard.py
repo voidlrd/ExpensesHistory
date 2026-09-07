@@ -31,7 +31,8 @@ class DashboardView(QWidget):
 
         self.year_combo = QComboBox()
         curr_year = date.today().year
-        for y in range(curr_year - 5, curr_year + 2):
+        years = self.reports_repo.get_available_years()
+        for y in years:
             self.year_combo.addItem(str(y), userData=y)
         self.year_combo.setCurrentText(str(curr_year))
         self.year_combo.currentIndexChanged.connect(self.load_data)
