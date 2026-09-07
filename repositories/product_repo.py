@@ -56,6 +56,15 @@ class ProductRepository:
         with get_session() as session:
             p = session.get(Product, product_id)
             if p:
+                folded_name = new_name.casefold()
+                clash = next(
+                    (o for o in session.scalars(select(Product))
+                     if o.id != product_id and o.name.casefold() == folded_name),
+                    None
+                )
+                if clash:
+                    raise ValueError(f"Another product is already named '{clash.name}'.")
+
                 p.name = new_name
                 p.brand = brand or None
                 p.unit_of_measure = unit or None

@@ -285,7 +285,12 @@ class DataManagerView(QWidget):
             QMessageBox.warning(self, "Error", "Product name cannot be empty.")
             return
 
-        self.product_repo.update_product(p.id, new_name, brand, unit, cat_name)
+        try:
+            self.product_repo.update_product(p.id, new_name, brand, unit, cat_name)
+        except ValueError as e:
+            QMessageBox.warning(self, "Error", str(e))
+            return
+
         QMessageBox.information(self, "Success", "Product updated successfully.")
         self.load_data()
 

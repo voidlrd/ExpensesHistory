@@ -66,10 +66,10 @@ class ItemCategory(Base):
 class Product(Base):
     __tablename__ = "product"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(250), nullable=False)
+    name: Mapped[str] = mapped_column(String(250), unique=True, nullable=False)
     brand: Mapped[Optional[str]] = mapped_column(String(100))
     unit_of_measure: Mapped[Optional[str]] = mapped_column(String(20))
-    category_id: Mapped[Optional[int]] = mapped_column("category", ForeignKey("item_category.id"))
+    category_id: Mapped[Optional[int]] = mapped_column("category", ForeignKey("item_category.id"), index=True)
     hidden: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     category: Mapped[Optional["ItemCategory"]] = relationship()
@@ -77,8 +77,8 @@ class Product(Base):
 class Item(Base):
     __tablename__ = "item"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    transaction_id: Mapped[int] = mapped_column(ForeignKey("transaction_record.id"), nullable=False)
-    product_id: Mapped[int] = mapped_column(ForeignKey("product.id"), nullable=False)
+    transaction_id: Mapped[int] = mapped_column(ForeignKey("transaction_record.id"), nullable=False, index=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("product.id"), nullable=False, index=True)
     item_name_override: Mapped[Optional[str]] = mapped_column(String(250))
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 3), nullable=False)
     price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
