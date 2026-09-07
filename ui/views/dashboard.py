@@ -103,11 +103,18 @@ class DashboardView(QWidget):
         return amount
 
     def load_currencies(self):
+        previous = self.currency_selector.currentData()
+
         self.currency_selector.blockSignals(True)
         self.currency_selector.clear()
 
         for cur in self.ref_repo.get_all_currencies():
             self.currency_selector.addItem(cur.code, userData=cur.code)
+
+        if previous:
+            idx = self.currency_selector.findData(previous)
+            if idx >= 0:
+                self.currency_selector.setCurrentIndex(idx)
 
         self.currency_selector.blockSignals(False)
         self.load_data()

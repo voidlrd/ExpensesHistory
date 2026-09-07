@@ -21,7 +21,20 @@ class ProductRepository:
                 session.commit()
 
     @staticmethod
-    def get_product_price_history(product_id: int):
+    def get_product_currencies(product_id: int):
+        with get_session() as session:
+            stmt = (
+                select(TransactionRecord.currency_code)
+                .join(Item.transaction)
+                .where(Item.product_id == product_id)
+                .where(Item.refund == False)
+                .distinct()
+                .order_by(TransactionRecord.currency_code)
+            )
+            return list(session.scalars(stmt))
+
+    @staticmethod
+    def get_product_price_history(product_id: int, currency_code=None):
         with get_session() as session:
             stmt = (
                 select(Item)
@@ -31,8 +44,11 @@ class ProductRepository:
                     joinedload(Item.product)
                 )
                 .where(Item.product_id == product_id)
+                .where(Item.refund == False)
                 .order_by(TransactionRecord.date.desc())
             )
+            if currency_code:
+                stmt = stmt.where(TransactionRecord.currency_code == currency_code)
             return session.scalars(stmt).all()
 
     @staticmethod

@@ -37,10 +37,16 @@ class PriceTrackerView(QWidget):
         self.product_search.setMinimumWidth(300)
         self.product_search.currentIndexChanged.connect(self.on_product_selected)
 
+        self.currency_selector = QComboBox()
+        self.currency_selector.currentIndexChanged.connect(self.on_currency_changed)
+
         header_layout.addWidget(title)
         header_layout.addSpacing(20)
         header_layout.addWidget(QLabel("Product:"))
         header_layout.addWidget(self.product_search)
+        header_layout.addSpacing(10)
+        header_layout.addWidget(QLabel("Currency:"))
+        header_layout.addWidget(self.currency_selector)
         header_layout.addStretch()
         layout.addLayout(header_layout)
 
@@ -60,7 +66,9 @@ class PriceTrackerView(QWidget):
         layout.addWidget(self.plot_widget)
 
         self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["Date", "Store (Counterparty)", "Amount Bought", "Unit Price"])
+        self.table.setHorizontalHeaderLabels(
+            ["Date", "Store (Counterparty)", "Amount Bought", "Unit Price (after discount)"]
+        )
 
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -111,16 +119,51 @@ class PriceTrackerView(QWidget):
                 self.product_search.setCurrentIndex(index)
 
         self.product_search.blockSignals(False)
+        self.load_currencies()
+        self.refresh_history()
 
     def on_product_selected(self, index):
+        self.load_currencies()
+        self.refresh_history()
+
+    def on_currency_changed(self, index):
+        self.refresh_history()
+
+    def load_currencies(self):
+        product_id = self.product_search.currentData()
+        previous = self.currency_selector.currentData()
+
+        self.currency_selector.blockSignals(True)
+        self.currency_selector.clear()
+        if product_id:
+            for code in self.product_repo.get_product_currencies(product_id):
+                self.currency_selector.addItem(code, userData=code)
+            if previous:
+                idx = self.currency_selector.findData(previous)
+                if idx >= 0:
+                    self.currency_selector.setCurrentIndex(idx)
+        self.currency_selector.blockSignals(False)
+
+    def refresh_history(self):
         product_id = self.product_search.currentData()
         if not product_id:
             self.table.setRowCount(0)
+            self.plot_widget.clear()
+            self.plot_widget.setVisible(False)
             self._reset_stats()
             return
 
-        items = self.product_repo.get_product_price_history(product_id)
+        items = self.product_repo.get_product_price_history(
+            product_id, self.currency_selector.currentData()
+        )
         self.populate_table_and_stats(items)
+
+    @staticmethod
+    def _effective_price(item):
+        amount = float(item.amount)
+        if amount <= 0:
+            return float(item.price)
+        return float((item.amount * item.price) - item.discount) / amount
 
     def populate_table_and_stats(self, items):
         self.table.setRowCount(0)
@@ -130,23 +173,18 @@ class PriceTrackerView(QWidget):
             self.plot_widget.setVisible(False)
             self._reset_stats()
             return
-        
+
         self.plot_widget.setVisible(True)
 
-        lowest_item = items[0]
-        highest_item = items[0]
-        latest_item = items[0]
+        # items arrive newest-first
+        entries = [(item, self._effective_price(item)) for item in items]
 
-        timestamps = []
-        prices = []
-
-        for row_idx, item in enumerate(items):
+        for row_idx, (item, eff_price) in enumerate(entries):
             self.table.insertRow(row_idx)
             tx = item.transaction
-            date_str = tx.date.strftime("%Y-%m-%d")
             store_name = tx.counterparty.name if tx.counterparty else "Unknown"
 
-            self.table.setItem(row_idx, 0, QTableWidgetItem(date_str))
+            self.table.setItem(row_idx, 0, QTableWidgetItem(tx.date.strftime("%Y-%m-%d")))
             self.table.setItem(row_idx, 1, QTableWidgetItem(store_name))
 
             amount_val = float(item.amount)
@@ -154,49 +192,43 @@ class PriceTrackerView(QWidget):
                 amount_str = str(int(amount_val))
             else:
                 amount_str = f"{amount_val:.3f}".rstrip('0').rstrip('.')
-            
+
             unit = item.product.unit_of_measure or ""
             amount_item = QTableWidgetItem(f"{amount_str} {unit}".strip())
             amount_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self.table.setItem(row_idx, 2, amount_item)
 
-            eff_price = float((item.amount * item.price) - item.discount) / amount_val if amount_val > 0 else float(item.price)
-
-            item._eff_price = eff_price
-
-            price_item = QTableWidgetItem(f"{item.price:.2f} {tx.currency_code}")
+            price_item = QTableWidgetItem(f"{eff_price:.2f} {tx.currency_code}")
             price_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self.table.setItem(row_idx, 3, price_item)
 
-            if getattr(lowest_item, '_eff_price', float(lowest_item.price)) > eff_price:
-                lowest_item = item
-            if getattr(highest_item, '_eff_price', float(highest_item.price)) < eff_price:
-                highest_item = item
+        lowest = min(entries, key=lambda e: e[1])
+        highest = max(entries, key=lambda e: e[1])
+        latest = entries[0]
 
-        for item in reversed(items):
+        timestamps = []
+        prices = []
+        for item, eff_price in reversed(entries):
             dt = item.transaction.date
-            ts = datetime(dt.year, dt.month, dt.day).timestamp()
-            timestamps.append(ts)
-            prices.append(getattr(item, '_eff_price', float(item.price)))
+            timestamps.append(datetime(dt.year, dt.month, dt.day).timestamp())
+            prices.append(eff_price)
 
-        if timestamps:
-            self.plot_widget.plot(
-                timestamps, prices,
-                pen=pg.mkPen(color='#2196F3', width=3),
-                symbol='o', symbolSize=8, symbolBrush='#2196F3'
-            )
+        self.plot_widget.plot(
+            timestamps, prices,
+            pen=pg.mkPen(color='#2196F3', width=3),
+            symbol='o', symbolSize=8, symbolBrush='#2196F3'
+        )
 
-        self._update_card(self.lowest_price_label, lowest_item)
-        self._update_card(self.latest_price_label, latest_item)
-        self._update_card(self.highest_price_label, highest_item)
+        self._update_card(self.lowest_price_label, *lowest)
+        self._update_card(self.latest_price_label, *latest)
+        self._update_card(self.highest_price_label, *highest)
 
-    def _update_card(self, card_dict, item):
+    def _update_card(self, card_dict, item, eff_price):
         tx = item.transaction
         store_name = tx.counterparty.name if tx.counterparty else "Unknown"
         date_str = tx.date.strftime("%b %Y")
 
-        val = getattr(item, '_eff_price', float(item.price))
-        card_dict["value"].setText(f"{item.price:.2f} {tx.currency_code}")
+        card_dict["value"].setText(f"{eff_price:.2f} {tx.currency_code}")
         card_dict["sub"].setText(f"{store_name}\n({date_str})")
 
     def _reset_stats(self):
