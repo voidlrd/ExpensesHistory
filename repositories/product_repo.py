@@ -27,7 +27,8 @@ class ProductRepository:
                 select(Item)
                 .join(Item.transaction)
                 .options(
-                    joinedload(Item.transaction).joinedload(TransactionRecord.counterparty)
+                    joinedload(Item.transaction).joinedload(TransactionRecord.counterparty),
+                    joinedload(Item.product)
                 )
                 .where(Item.product_id == product_id)
                 .order_by(TransactionRecord.date.desc())
