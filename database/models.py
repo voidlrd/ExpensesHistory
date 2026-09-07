@@ -46,10 +46,10 @@ class TransactionRecord(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     number: Mapped[Optional[str]] = mapped_column(String(50), unique=True)
     payment_type_id: Mapped[int] = mapped_column("payment_type", ForeignKey("payment_type.id"), nullable=False)
-    currency_code: Mapped[str] = mapped_column("currency", ForeignKey("currency.code"), nullable=False)
-    counterparty_id: Mapped[int] = mapped_column("counterparty", ForeignKey("counterparty.id"), nullable=False)
+    currency_code: Mapped[str] = mapped_column("currency", ForeignKey("currency.code"), nullable=False, index=True)
+    counterparty_id: Mapped[int] = mapped_column("counterparty", ForeignKey("counterparty.id"), nullable=False, index=True)
     location_id: Mapped[Optional[int]] = mapped_column("location", ForeignKey("counterparty_location.id"))
-    date: Mapped[datetime.date] = mapped_column(Date, nullable=False)
+    date: Mapped[datetime.date] = mapped_column(Date, nullable=False, index=True)
     total_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
     discount: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), default=0)
 
@@ -91,9 +91,9 @@ class Item(Base):
 class IncomeRecord(Base):
     __tablename__ = "income_record"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    counterparty_id: Mapped[int] = mapped_column("counterparty", ForeignKey("counterparty.id"), nullable=False)
-    date: Mapped[datetime.date] = mapped_column(Date, nullable=False)
-    currency_code: Mapped[str] = mapped_column("currency", ForeignKey("currency.code"), nullable=False)
+    counterparty_id: Mapped[int] = mapped_column("counterparty", ForeignKey("counterparty.id"), nullable=False, index=True)
+    date: Mapped[datetime.date] = mapped_column(Date, nullable=False, index=True)
+    currency_code: Mapped[str] = mapped_column("currency", ForeignKey("currency.code"), nullable=False, index=True)
     net_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     payment_type_id: Mapped[int] = mapped_column("payment_type", ForeignKey("payment_type.id"), nullable=False)
 
