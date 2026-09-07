@@ -1,7 +1,7 @@
 import datetime
 from decimal import Decimal
 from typing import Optional, List
-from sqlalchemy import String, Integer, Date, Numeric, Boolean, ForeignKey, UniqueConstraint
+from sqlalchemy import String, Date, Numeric, Boolean, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 class Base(DeclarativeBase):
@@ -24,7 +24,7 @@ class CounterpartyCategory(Base):
 class Counterparty(Base):
     __tablename__ = "counterparty"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(250), nullable=False)
+    name: Mapped[str] = mapped_column(String(250), unique=True, nullable=False)
     category_id: Mapped[int] = mapped_column("category", ForeignKey("counterparty_category.id"), nullable=False)
     hidden: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 

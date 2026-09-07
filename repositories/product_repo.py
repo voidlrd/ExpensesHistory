@@ -1,4 +1,4 @@
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 from database.engine import get_session
 from database.models import Product, Item, TransactionRecord, ItemCategory
@@ -45,7 +45,11 @@ class ProductRepository:
                 p.unit_of_measure = unit or None
 
                 if category_name:
-                    cat = session.scalar(select(ItemCategory).where(func.lower(ItemCategory.name) == category_name.lower()))
+                    folded = category_name.casefold()
+                    cat = next(
+                        (c for c in session.scalars(select(ItemCategory)) if c.name.casefold() == folded),
+                        None
+                    )
                     if not cat:
                         cat = ItemCategory(name=category_name)
                         session.add(cat)
