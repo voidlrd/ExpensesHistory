@@ -31,7 +31,7 @@ CREATE TABLE counterparty_location (
 
 CREATE TABLE transaction_record (
 	id INT PRIMARY KEY IDENTITY(1,1),
-	number VARCHAR(50) UNIQUE,
+	number VARCHAR(50),
 	payment_type INT NOT NULL,
 	currency VARCHAR(3) NOT NULL,
 	counterparty INT NOT NULL,
