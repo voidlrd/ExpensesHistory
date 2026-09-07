@@ -69,17 +69,17 @@ class NewTransactionView(QWidget):
         form_layout.addRow("Currency:", self.currency_input)
         layout.addLayout(form_layout)
 
-        self.items_table = QTableWidget(0, 5)
-        self.items_table.setHorizontalHeaderLabels(["Product", "Amount", "Price", "Total", "Actions"])
+        self.items_table = QTableWidget(0, 7)
+        self.items_table.setHorizontalHeaderLabels(["Product", "Override", "Amount", "Price", "Refund", "Total", ""])
         self.items_table.verticalHeader().setVisible(False)
 
         self.items_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.items_table.setColumnWidth(1, 150)
+        self.items_table.setColumnWidth(1, 120)
         self.items_table.setColumnWidth(2, 90)
-        self.items_table.setColumnWidth(3, 100)
-        self.items_table.setColumnWidth(4, 70)
-        self.items_table.setColumnWidth(5, 100)
-        self.items_table.setColumnWidth(6, 50)
+        self.items_table.setColumnWidth(3, 90)
+        self.items_table.setColumnWidth(4, 60)
+        self.items_table.setColumnWidth(5, 80)
+        self.items_table.setColumnWidth(6, 40)
         self.items_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         layout.addWidget(self.items_table)
 
@@ -387,3 +387,5 @@ class NewTransactionView(QWidget):
         self.apply_smart_defaults()
         self.add_empty_row()
         self.calculate_totals()
+
+        self.counterparty_input.setFocus()
