@@ -10,6 +10,7 @@ from decimal import Decimal
 from repositories.reference_repo import ReferenceRepository
 from repositories.product_repo import ProductRepository
 from repositories.transaction_repo import TransactionRepository, line_total
+from ui.widgets import repopulate_combo
 
 class FastTabSpinBox(QDoubleSpinBox):
     def __init__(self, add_row_callback, *args, **kwargs):
@@ -149,50 +150,35 @@ class NewTransactionView(QWidget):
 
     def _reload_locations(self):
         name = self.counterparty_input.currentText().strip()
-        previous = self.location_input.currentData()
         locations = self.ref_repo.get_locations_for_counterparty(name)
 
-        self.location_input.blockSignals(True)
-        self.location_input.clear()
-        for loc in locations:
-            self.location_input.addItem(loc.label, userData=loc.id)
-        if previous:
-            idx = self.location_input.findData(previous)
-            if idx >= 0:
-                self.location_input.setCurrentIndex(idx)
-        self.location_input.blockSignals(False)
+        repopulate_combo(
+            self.location_input,
+            [(loc.label, loc.id) for loc in locations],
+            block_signals=True
+        )
 
         has_locations = bool(locations)
         self.location_label.setVisible(has_locations)
         self.location_input.setVisible(has_locations)
 
     def load_reference_data(self):
-        curr_currency = self.currency_input.currentData()
-        curr_payment = self.payment_type_input.currentData()
         curr_cp = self.counterparty_input.currentText()
 
         self.products = self.product_repo.get_all_products(include_hidden=False)
 
-        self.currency_input.clear()
-        self.payment_type_input.clear()
-        self.counterparty_input.clear()
-
-        for cur in self.ref_repo.get_all_currencies():
-            self.currency_input.addItem(cur.code, userData=cur.code)
-
-        for pt in self.ref_repo.get_all_payment_types():
-            self.payment_type_input.addItem(pt.type, userData=pt.id)
-
-        for cp in self.ref_repo.get_all_counterparties():
-            self.counterparty_input.addItem(cp.name, userData=cp.id)
-
-        if curr_currency:
-            idx = self.currency_input.findData(curr_currency)
-            if idx >= 0: self.currency_input.setCurrentIndex(idx)
-
-        if curr_payment:
-            idx = self.payment_type_input.findData(curr_payment)
-            if idx >= 0: self.payment_type_input.setCurrentIndex(idx)
+        repopulate_combo(
+            self.currency_input,
+            [(cur.code, cur.code) for cur in self.ref_repo.get_all_currencies()]
+        )
+        repopulate_combo(
+            self.payment_type_input,
+            [(pt.type, pt.id) for pt in self.ref_repo.get_all_payment_types()]
+        )
+        repopulate_combo(
+            self.counterparty_input,
+            [(cp.name, cp.id) for cp in self.ref_repo.get_all_counterparties()]
+        )
 
         if curr_cp:
             self.counterparty_input.setCurrentText(curr_cp)

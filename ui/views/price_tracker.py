@@ -1,10 +1,11 @@
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QComboBox,
-    QTableWidget, QTableWidgetItem, QHeaderView, QLabel, QFrame
+    QTableWidget, QTableWidgetItem, QHeaderView, QLabel
 )
 from PyQt6.QtCore import Qt
 from repositories.product_repo import ProductRepository
+from ui.widgets import format_amount, make_stat_card, repopulate_combo
 from datetime import datetime
 
 class TimeAxisItem(pg.AxisItem):
@@ -51,9 +52,9 @@ class PriceTrackerView(QWidget):
         layout.addLayout(header_layout)
 
         stats_layout = QHBoxLayout()
-        self.lowest_price_label = self._create_stat_card(stats_layout, "Lowest Price", "#4CAF50")
-        self.latest_price_label = self._create_stat_card(stats_layout, "Latest Price", "#2196F3")
-        self.highest_price_label = self._create_stat_card(stats_layout, "Highest Price", "#F44336")
+        self.lowest_price_label = self._stat_card(stats_layout, "Lowest Price", "#4CAF50")
+        self.latest_price_label = self._stat_card(stats_layout, "Latest Price", "#2196F3")
+        self.highest_price_label = self._stat_card(stats_layout, "Highest Price", "#F44336")
         layout.addLayout(stats_layout)
 
         self.plot_widget = pg.PlotWidget(axisItems={'bottom': TimeAxisItem(orientation='bottom')})
@@ -78,47 +79,19 @@ class PriceTrackerView(QWidget):
 
         layout.addWidget(self.table)
 
-    def _create_stat_card(self, parent_layout, title_text, color):
-        frame = QFrame()
-        frame.setStyleSheet(f"background-color: {color}; border-radius: 8px; padding: 10px;")
-        flayout = QVBoxLayout(frame)
-
-        title = QLabel(title_text)
-        title.setStyleSheet("color: white; font-size: 14px;")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        value_label = QLabel("-")
-        value_label.setStyleSheet("color: white; font-size: 20px; font-weight: bold;")
-        value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        subtitle = QLabel("")
-        subtitle.setStyleSheet("color: #E0E0E0; font-size: 11px;")
-        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        flayout.addWidget(title)
-        flayout.addWidget(value_label)
-        flayout.addWidget(subtitle)
-
-        parent_layout.addWidget(frame)
-        return {"value": value_label, "sub": subtitle}
+    @staticmethod
+    def _stat_card(parent_layout, title_text, color):
+        value, sub = make_stat_card(parent_layout, title_text, color, value_text="-",
+                                    value_size=20, padding=10, radius=8, subtitle=True)
+        return {"value": value, "sub": sub}
 
     def load_products(self):
-        current_product_id = self.product_search.currentData()
-
-        self.product_search.blockSignals(True)
-        self.product_search.clear()
-        self.product_search.addItem("", userData=None)
-
-        products = self.product_repo.get_all_products()
-        for p in products:
-            self.product_search.addItem(p.name, userData=p.id)
-
-        if current_product_id:
-            index = self.product_search.findData(current_product_id)
-            if index >= 0:
-                self.product_search.setCurrentIndex(index)
-
-        self.product_search.blockSignals(False)
+        repopulate_combo(
+            self.product_search,
+            [(p.name, p.id) for p in self.product_repo.get_all_products()],
+            placeholder=("", None),
+            block_signals=True
+        )
         self.load_currencies()
         self.refresh_history()
 
@@ -131,18 +104,12 @@ class PriceTrackerView(QWidget):
 
     def load_currencies(self):
         product_id = self.product_search.currentData()
-        previous = self.currency_selector.currentData()
-
-        self.currency_selector.blockSignals(True)
-        self.currency_selector.clear()
-        if product_id:
-            for code in self.product_repo.get_product_currencies(product_id):
-                self.currency_selector.addItem(code, userData=code)
-            if previous:
-                idx = self.currency_selector.findData(previous)
-                if idx >= 0:
-                    self.currency_selector.setCurrentIndex(idx)
-        self.currency_selector.blockSignals(False)
+        codes = self.product_repo.get_product_currencies(product_id) if product_id else []
+        repopulate_combo(
+            self.currency_selector,
+            [(code, code) for code in codes],
+            block_signals=True
+        )
 
     def refresh_history(self):
         product_id = self.product_search.currentData()
@@ -187,14 +154,8 @@ class PriceTrackerView(QWidget):
             self.table.setItem(row_idx, 0, QTableWidgetItem(tx.date.strftime("%Y-%m-%d")))
             self.table.setItem(row_idx, 1, QTableWidgetItem(store_name))
 
-            amount_val = float(item.amount)
-            if amount_val.is_integer():
-                amount_str = str(int(amount_val))
-            else:
-                amount_str = f"{amount_val:.3f}".rstrip('0').rstrip('.')
-
             unit = item.product.unit_of_measure or ""
-            amount_item = QTableWidgetItem(f"{amount_str} {unit}".strip())
+            amount_item = QTableWidgetItem(f"{format_amount(item.amount)} {unit}".strip())
             amount_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self.table.setItem(row_idx, 2, amount_item)
 

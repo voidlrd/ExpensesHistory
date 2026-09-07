@@ -1,10 +1,11 @@
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel, QHBoxLayout, QFrame,
+    QWidget, QVBoxLayout, QLabel, QHBoxLayout,
     QComboBox, QTableWidget, QTableWidgetItem, QHeaderView
 )
 from PyQt6.QtCore import Qt
 from repositories.reports_repo import ReportsRepository
 from repositories.reference_repo import ReferenceRepository
+from ui.widgets import make_stat_card, repopulate_combo
 from datetime import date
 import calendar
 
@@ -53,9 +54,9 @@ class DashboardView(QWidget):
         layout.addLayout(header_layout)
 
         cards_layout = QHBoxLayout()
-        self.income_label = self._create_card(cards_layout, "Income", "#4CAF50")
-        self.expense_label = self._create_card(cards_layout, "Expenses", "#F44336")
-        self.balance_label = self._create_card(cards_layout, "Net Balance", "#2196F3")
+        self.income_label, _ = make_stat_card(cards_layout, "Income", "#4CAF50")
+        self.expense_label, _ = make_stat_card(cards_layout, "Expenses", "#F44336")
+        self.balance_label, _ = make_stat_card(cards_layout, "Net Balance", "#2196F3")
         layout.addLayout(cards_layout)
 
         tables_title_layout = QHBoxLayout()
@@ -83,40 +84,12 @@ class DashboardView(QWidget):
         tables_layout.addWidget(self.cat_breakdown_table)
         layout.addLayout(tables_layout)
 
-    def _create_card(self, parent_layout, title_text, color):
-        frame = QFrame()
-        frame.setStyleSheet(f"background-color: {color}; border-radius: 10px; padding: 20px;")
-        flayout = QVBoxLayout(frame)
-
-        title = QLabel(title_text)
-        title.setStyleSheet("color: white; font-size: 16px;")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        amount = QLabel("0.00")
-        amount.setStyleSheet("color: white; font-size: 28px; font-weight: bold;")
-        amount.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        flayout.addWidget(title)
-        flayout.addWidget(amount)
-
-        parent_layout.addWidget(frame)
-        return amount
-
     def load_currencies(self):
-        previous = self.currency_selector.currentData()
-
-        self.currency_selector.blockSignals(True)
-        self.currency_selector.clear()
-
-        for cur in self.ref_repo.get_all_currencies():
-            self.currency_selector.addItem(cur.code, userData=cur.code)
-
-        if previous:
-            idx = self.currency_selector.findData(previous)
-            if idx >= 0:
-                self.currency_selector.setCurrentIndex(idx)
-
-        self.currency_selector.blockSignals(False)
+        repopulate_combo(
+            self.currency_selector,
+            [(cur.code, cur.code) for cur in self.ref_repo.get_all_currencies()],
+            block_signals=True
+        )
         self.load_data()
 
     def load_data(self):

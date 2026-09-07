@@ -9,6 +9,7 @@ from repositories.transaction_repo import TransactionRepository, line_total
 from repositories.reference_repo import ReferenceRepository
 from repositories.income_repo import IncomeRepository
 from ui.views.new_transaction import NewTransactionView
+from ui.widgets import format_amount, repopulate_combo
 
 class NumericItem(QTableWidgetItem):
     def __init__(self, value, text=None):
@@ -191,13 +192,8 @@ class TransactionDetailDialog(QDialog):
             self.table.setItem(row_idx, 2, QTableWidgetItem(brand_name))
 
             
-            amount_val = float(item.amount)
-            if amount_val.is_integer():
-                amount_str = str(int(amount_val))
-            else:
-                amount_str = f"{amount_val:.3f}".rstrip('0').rstrip('.')
-            
-            self.table.setItem(row_idx, 3, NumericItem(float(item.amount), amount_str))
+            self.table.setItem(row_idx, 3,
+                               NumericItem(float(item.amount), format_amount(item.amount)))
 
             unit_name = item.product.unit_of_measure if item.product else ""
             self.table.setItem(row_idx, 4, QTableWidgetItem(unit_name))
@@ -342,25 +338,16 @@ class TransactionListView(QWidget):
         self.load_data()
 
     def load_reference_data(self):
-        curr_cp = self.cb_counterparty.currentData()
-        curr_cur = self.cb_currency.currentData()
-
-        self.cb_counterparty.clear()
-        self.cb_counterparty.addItem("All Stores", userData=None)
-        for cp in self.ref_repo.get_all_counterparties():
-            self.cb_counterparty.addItem(cp.name, userData=cp.id)
-
-        self.cb_currency.clear()
-        self.cb_currency.addItem("All Currencies", userData=None)
-        for cur in self.ref_repo.get_all_currencies():
-            self.cb_currency.addItem(cur.code, userData=cur.code)
-
-        if curr_cp:
-            idx = self.cb_counterparty.findData(curr_cp)
-            if idx >= 0: self.cb_counterparty.setCurrentIndex(idx)
-        if curr_cur:
-            idx = self.cb_currency.findData(curr_cur)
-            if idx >= 0: self.cb_currency.setCurrentIndex(idx)
+        repopulate_combo(
+            self.cb_counterparty,
+            [(cp.name, cp.id) for cp in self.ref_repo.get_all_counterparties()],
+            placeholder=("All Stores", None)
+        )
+        repopulate_combo(
+            self.cb_currency,
+            [(cur.code, cur.code) for cur in self.ref_repo.get_all_currencies()],
+            placeholder=("All Currencies", None)
+        )
 
     def reset_filters(self):
         today = QDate.currentDate()

@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import QDate
 from repositories.reference_repo import ReferenceRepository
 from repositories.income_repo import IncomeRepository
+from ui.widgets import repopulate_combo
 
 class NewIncomeView(QWidget):
     def __init__(self):
@@ -55,28 +56,18 @@ class NewIncomeView(QWidget):
         layout.addStretch()
 
     def load_reference_data(self):
-        curr_currency = self.currency_input.currentData()
-        curr_payment = self.payment_type_input.currentData()
-
-        self.currency_input.clear()
-        for cur in self.ref_repo.get_all_currencies():
-            self.currency_input.addItem(cur.code, userData=cur.code)
-
-        self.payment_type_input.clear()
-        for pt in self.ref_repo.get_all_payment_types():
-            self.payment_type_input.addItem(pt.type, userData=pt.id)
-
-        self.counterparty_input.clear()
-        for cp in self.ref_repo.get_all_counterparties():
-            self.counterparty_input.addItem(cp.name, userData=cp.id)
-
-        if curr_currency:
-            idx = self.currency_input.findData(curr_currency)
-            if idx >= 0: self.currency_input.setCurrentIndex(idx)
-
-        if curr_payment:
-            idx = self.payment_type_input.findData(curr_payment)
-            if idx >= 0: self.payment_type_input.setCurrentIndex(idx)
+        repopulate_combo(
+            self.currency_input,
+            [(cur.code, cur.code) for cur in self.ref_repo.get_all_currencies()]
+        )
+        repopulate_combo(
+            self.payment_type_input,
+            [(pt.type, pt.id) for pt in self.ref_repo.get_all_payment_types()]
+        )
+        repopulate_combo(
+            self.counterparty_input,
+            [(cp.name, cp.id) for cp in self.ref_repo.get_all_counterparties()]
+        )
 
     def apply_smart_defaults(self):
         last_pt, last_cur = IncomeRepository.get_last_used_defaults()
