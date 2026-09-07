@@ -1,35 +1,24 @@
 from decimal import Decimal
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 from database.engine import get_session
-from database.models import TransactionRecord, Item, Counterparty, Product, CounterpartyCategory
+from database.models import TransactionRecord, Item, Product
+from repositories.reference_repo import find_counterparty, get_or_create_counterparty
+
+def line_total(amount, price, discount, refund):
+    total = (Decimal(str(amount)) * Decimal(str(price))) - Decimal(str(discount))
+    return -total if refund else total
 
 class TransactionRepository:
     @staticmethod
     def save_transaction(date, counterparty_name, receipt_no, payment_type_id, currency_code, items_data, location_id=None):
         with get_session() as session:
-            all_cps = session.scalars(select(Counterparty)).all()
-            counterparty = next((cp for cp in all_cps if cp.name.casefold() == counterparty_name.casefold()), None)
+            counterparty = get_or_create_counterparty(session, counterparty_name, "Supermarket")
 
-            if not counterparty:
-                cat = session.scalar(select(CounterpartyCategory).where(CounterpartyCategory.name == "Supermarket"))
-                if not cat:
-                    cat = CounterpartyCategory(name="Supermarket")
-                    session.add(cat)
-                    session.flush()
-
-                counterparty = Counterparty(name=counterparty_name, category_id=cat.id)
-                session.add(counterparty)
-                session.flush()
-
-            gross_amount = Decimal(0.0)
-            for item in items_data:
-                line_total = Decimal(str(item["amount"])) * Decimal(str(item["price"])) - Decimal(str(item["discount"]))
-                if item["refund"]:
-                    gross_amount -= line_total
-                else:
-                    gross_amount += line_total
-            final_amount = gross_amount
+            final_amount = sum(
+                (line_total(i["amount"], i["price"], i["discount"], i["refund"]) for i in items_data),
+                Decimal(0)
+            )
 
             transaction = TransactionRecord(
                 number=receipt_no,
@@ -43,19 +32,19 @@ class TransactionRepository:
             session.add(transaction)
             session.flush()
 
-            all_prods = list(session.scalars(select(Product)).all())
+            products = {p.name.casefold(): p for p in session.scalars(select(Product))}
 
             for item_data in items_data:
                 product_name = item_data["product_name"]
-                product = next((p for p in all_prods if p.name.casefold() == product_name.casefold()), None)
+                product = products.get(product_name.casefold())
 
                 if not product:
                     product = Product(name=product_name)
                     session.add(product)
                     session.flush()
-                    all_prods.append(product)
+                    products[product_name.casefold()] = product
 
-                new_item = Item(
+                session.add(Item(
                     transaction_id=transaction.id,
                     product_id=product.id,
                     item_name_override=item_data["override"],
@@ -63,8 +52,7 @@ class TransactionRepository:
                     price=Decimal(str(item_data["price"])),
                     discount=Decimal(str(item_data["discount"])),
                     refund=item_data["refund"]
-                )
-                session.add(new_item)
+                ))
 
             session.commit()
 
@@ -122,16 +110,19 @@ class TransactionRepository:
             return None, None
 
     @staticmethod
-    def check_potential_duplicate(tx_date, counterparty_name, final_amount):
+    def check_potential_duplicate(tx_date, counterparty_name, final_amount, currency_code=None):
         with get_session() as session:
-            final_dec = Decimal(str(final_amount))
+            counterparty = find_counterparty(session, counterparty_name)
+            if not counterparty:
+                return False
 
             stmt = (
                 select(TransactionRecord)
-                .join(TransactionRecord.counterparty)
                 .where(TransactionRecord.date == tx_date)
-                .where(TransactionRecord.total_amount == final_dec)
-                .where(func.lower(Counterparty.name) == counterparty_name.lower())
+                .where(TransactionRecord.total_amount == Decimal(str(final_amount)))
+                .where(TransactionRecord.counterparty_id == counterparty.id)
             )
+            if currency_code:
+                stmt = stmt.where(TransactionRecord.currency_code == currency_code)
 
             return session.scalar(stmt) is not None
