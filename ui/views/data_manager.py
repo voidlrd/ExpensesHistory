@@ -107,7 +107,7 @@ class DataManagerView(QWidget):
         prod_form_layout.addRow("Brand:", self.prod_brand_input)
         prod_form_layout.addRow("Category:", self.prod_cat_input)
         prod_form_layout.addRow("Unit of Measure:", self.prod_unit_input)
-        prod_form_layout.addRow("", self.prod_save_btn)
+        prod_form_layout.addRow("", prod_btn_layout)
 
         prod_layout.addWidget(prod_form_group, 1)
         self.tabs.addTab(self.prod_tab, "Products")
