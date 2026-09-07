@@ -65,6 +65,10 @@ class DataManagerView(QWidget):
 
         loc_btn_layout.addWidget(self.loc_add_btn)
         loc_btn_layout.addWidget(self.loc_del_btn)
+
+        loc_layout.addWidget(self.loc_list)
+        loc_layout.addLayout(loc_btn_layout)
+
         cp_right_panel.addWidget(self.loc_group)
         self.loc_group.setEnabled(False)
 
