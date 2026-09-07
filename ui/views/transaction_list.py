@@ -146,13 +146,14 @@ class TransactionListView(QWidget):
         self.type_selector.addItems(["Expenses", "Income"])
         self.type_selector.currentIndexChanged.connect(self.on_type_changed)
 
+        today = QDate.currentDate()
         self.start_date = QDateEdit()
         self.start_date.setCalendarPopup(True)
-        self.start_date.setDate(QDate.currentDate().addDays(-30))
+        self.start_date.setDate(QDate(today.year(), today.month(), 1))
 
         self.end_date = QDateEdit()
         self.end_date.setCalendarPopup(True)
-        self.end_date.setDate(QDate.currentDate())
+        self.end_date.setDate(today)
 
         self.cb_counterparty = QComboBox()
         self.cb_currency = QComboBox()
@@ -229,8 +230,9 @@ class TransactionListView(QWidget):
             if idx >= 0: self.cb_currency.setCurrentIndex(idx)
 
     def reset_filters(self):
-        self.start_date.setDate(QDate.currentDate().addDays(-30))
-        self.end_date.setDate(QDate.currentDate())
+        today = QDate.currentDate()
+        self.start_date.setDate(QDate(today.year(), today.month(), 1))
+        self.end_date.setDate(today)
         self.cb_counterparty.setCurrentIndex(0)
         self.cb_currency.setCurrentIndex(0)
         self.load_data()
