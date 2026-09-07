@@ -8,9 +8,9 @@ class TransactionRepository:
     @staticmethod
     def save_transaction(date, counterparty_name, receipt_no, payment_type_id, currency_code, items_data, location_id=None):
         with get_session() as session:
-            counterparty = session.scalar(
-                select(Counterparty).where(func.lower(Counterparty.name) == counterparty_name.lower())
-            )
+            all_cps = session.scalars(select(Counterparty)).all()
+            counterparty = next((cp for cp in all_cps if cp.name.casefold() == counterparty_name.casefold()), None)
+
             if not counterparty:
                 cat = session.scalar(select(CounterpartyCategory).where(CounterpartyCategory.name == "Supermarket"))
                 if not cat:
@@ -43,14 +43,17 @@ class TransactionRepository:
             session.add(transaction)
             session.flush()
 
+            all_prods = list(session.scalars(select(Product)).all())
+
             for item_data in items_data:
                 product_name = item_data["product_name"]
-                product = session.scalar(select(Product).where(func.lower(Product.name) == product_name.lower()))
+                product = next((p for p in all_prods if p.name.casefold() == product_name.casefold()), None)
 
                 if not product:
                     product = Product(name=product_name)
                     session.add(product)
                     session.flush()
+                    all_prods.append(product)
 
                 new_item = Item(
                     transaction_id=transaction.id,

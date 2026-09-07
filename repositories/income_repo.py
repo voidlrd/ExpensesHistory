@@ -8,9 +8,9 @@ class IncomeRepository:
     @staticmethod
     def save_income(date, counterparty_name, net_amount, currency_code, payment_type_id):
         with get_session() as session:
-            counterparty = session.scalar(
-                select(Counterparty).where(func.lower(Counterparty.name) == counterparty_name.lower())
-            )
+            all_cps = session.scalars(select(Counterparty)).all()
+            counterparty = next((cp for cp in all_cps if cp.name.casefold() == counterparty_name.casefold()), None)
+            
             if not counterparty:
                 cat = session.scalar(select(CounterpartyCategory).where(CounterpartyCategory.name == "Employer"))
                 if not cat:
