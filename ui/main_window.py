@@ -22,26 +22,25 @@ class MainWindow(QMainWindow):
         self.price_tracker_tab = PriceTrackerView()
         self.data_manager_tab = DataManagerView()
 
-        self.tabs.addTab(self.dashboard_tab, "Dashboard")
-        self.tabs.addTab(self.new_transaction_tab, "New Transaction")
-        self.tabs.addTab(self.new_income_tab, "New Income")
-        self.tabs.addTab(self.history_tab, "History")
-        self.tabs.addTab(self.price_tracker_tab, "Price Tracker")
-        self.tabs.addTab(self.data_manager_tab, "Data Manager")
+        # (widget, title, refresh callback run when the tab is opened)
+        self.pages = [
+            (self.dashboard_tab, "Dashboard", self.dashboard_tab.load_currencies),
+            (self.new_transaction_tab, "New Transaction", self.new_transaction_tab.load_reference_data),
+            (self.new_income_tab, "New Income", self.new_income_tab.load_reference_data),
+            (self.history_tab, "History", self._refresh_history),
+            (self.price_tracker_tab, "Price Tracker", self.price_tracker_tab.load_products),
+            (self.data_manager_tab, "Data Manager", self.data_manager_tab.load_data),
+        ]
+
+        for widget, title, _ in self.pages:
+            self.tabs.addTab(widget, title)
 
         self.tabs.currentChanged.connect(self.on_tab_changed)
 
+    def _refresh_history(self):
+        self.history_tab.load_reference_data()
+        self.history_tab.load_data()
+
     def on_tab_changed(self, index):
-        if index == 0:
-            self.dashboard_tab.load_currencies()
-        if index == 1:
-            self.new_transaction_tab.load_reference_data()
-        if index == 2:
-            self.new_income_tab.load_reference_data()
-        if index == 3:
-            self.history_tab.load_reference_data()
-            self.history_tab.load_data()
-        if index == 4:
-            self.price_tracker_tab.load_products()
-        if index == 5:
-            self.data_manager_tab.load_data()
+        if 0 <= index < len(self.pages):
+            self.pages[index][2]()
