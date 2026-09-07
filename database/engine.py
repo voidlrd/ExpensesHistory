@@ -1,9 +1,17 @@
+import sys
+from pathlib import Path
 from sqlalchemy import create_engine, select, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 from .models import Base, Currency, PaymentType, CounterpartyCategory
 
-DATABASE_URL = "sqlite:///expense_tracker.db"
+if getattr(sys, 'frozen', False):
+    BASE_DIR = Path(sys.executable).parent
+else:
+    BASE_DIR = Path(__file__).resolve().parent.parent
+
+DB_PATH = BASE_DIR / "expense_tracker.db"
+DATABASE_URL = f"sqlite:///{DB_PATH}"
 
 engine = create_engine(DATABASE_URL, echo=False)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, expire_on_commit=False)

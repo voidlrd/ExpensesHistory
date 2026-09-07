@@ -9,6 +9,7 @@ from PyQt6.QtCore import Qt
 from sqlalchemy.exc import IntegrityError
 from repositories.reference_repo import ReferenceRepository
 from repositories.product_repo import ProductRepository
+from database.engine import BASE_DIR, DB_PATH
 from datetime import datetime
 
 class DataManagerView(QWidget):
@@ -135,11 +136,12 @@ class DataManagerView(QWidget):
 
     def create_backup(self):
         try:
-            os.makedirs("backups", exist_ok=True)
+            backup_dir = BASE_DIR / "backups"
+            backup_dir.mkdir(exist_ok=True)
             timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
             backup_path = os.path.join("backups", f"expense_tracker_{timestamp}.db")
 
-            with sqlite3.connect("expense_tracker.db") as src, sqlite3.connect(backup_path) as dst:
+            with sqlite3.connect(DB_PATH) as src, sqlite3.connect(backup_path) as dst:
                 src.backup(dst)
 
             QMessageBox.information(self, "Success", f"Backup created successfully!\n\nLocation: {backup_path}")
