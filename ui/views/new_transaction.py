@@ -10,7 +10,7 @@ from decimal import Decimal
 from repositories.reference_repo import ReferenceRepository
 from repositories.product_repo import ProductRepository
 from repositories.transaction_repo import TransactionRepository, line_total
-from ui.widgets import repopulate_combo
+from ui.widgets import TrimmedDoubleSpinBox, repopulate_combo
 from units import UNITS, normalize_unit
 
 (COL_PRODUCT, COL_OVERRIDE, COL_AMOUNT, COL_UNIT, COL_PRICE,
@@ -220,9 +220,13 @@ class NewTransactionView(QWidget):
             row = self.items_table.rowCount() - 1
             self._cell(row, COL_PRODUCT).setCurrentText(item.product.name if item.product else "")
             self._cell(row, COL_OVERRIDE).setText(item.item_name_override or "")
-            self._cell(row, COL_AMOUNT).setValue(float(item.amount))
+            amount = float(item.amount)
             if item.product:
                 self._cell(row, COL_UNIT).setCurrentText(normalize_unit(item.product.unit_of_measure))
+            # keep an old fractional pcs amount instead of silently rounding it
+            self._set_amount_mode(self._cell(row, COL_AMOUNT), self._cell(row, COL_UNIT).currentText(),
+                                  allow_fraction=not amount.is_integer())
+            self._cell(row, COL_AMOUNT).setValue(amount)
             self._cell(row, COL_PRICE).setValue(float(item.price))
             self._cell(row, COL_DISCOUNT).setValue(float(item.discount))
             self._cell(row, COL_REFUND).refund_cb.setChecked(item.refund)
@@ -271,9 +275,9 @@ class NewTransactionView(QWidget):
         override_le.setPlaceholderText("Optional...")
         self.items_table.setCellWidget(row_idx, COL_OVERRIDE, override_le)
 
-        amount_sb = QDoubleSpinBox()
-        amount_sb.setRange(0.001, 9999.999)
-        amount_sb.setDecimals(3)
+        amount_sb = TrimmedDoubleSpinBox()
+        amount_sb.setMaximum(9999.999)
+        self._set_amount_mode(amount_sb, "pcs")
         amount_sb.setValue(1.0)
         amount_sb.valueChanged.connect(self.calculate_totals)
         self.items_table.setCellWidget(row_idx, COL_AMOUNT, amount_sb)
@@ -284,6 +288,9 @@ class NewTransactionView(QWidget):
         unit_cb.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         unit_cb.setToolTip("pcs: Amount is a count. kg / l: Amount is the weighed quantity.")
         self.items_table.setCellWidget(row_idx, COL_UNIT, unit_cb)
+        unit_cb.currentTextChanged.connect(
+            lambda unit, sb=amount_sb: self._set_amount_mode(sb, unit)
+        )
         product_cb.currentTextChanged.connect(
             lambda text, cb=unit_cb: self._apply_known_unit(text, cb)
         )
@@ -322,6 +329,15 @@ class NewTransactionView(QWidget):
         self.items_table.setCellWidget(row_idx, COL_DELETE, del_btn)
 
         product_cb.setFocus()
+
+    @staticmethod
+    def _set_amount_mode(amount_sb, unit, allow_fraction=False):
+        if unit == "pcs" and not allow_fraction:
+            amount_sb.setDecimals(0)
+            amount_sb.setMinimum(1)
+        else:
+            amount_sb.setDecimals(3)
+            amount_sb.setMinimum(0.001)
 
     def _apply_known_unit(self, product_name, unit_cb):
         unit = self.product_units.get(product_name.strip().casefold())

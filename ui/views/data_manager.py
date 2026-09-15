@@ -3,7 +3,7 @@ from contextlib import closing
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QListWidget,
     QListWidgetItem, QFormLayout, QLineEdit, QComboBox,
-    QPushButton, QTabWidget, QMessageBox, QGroupBox, QLabel, QInputDialog, QDoubleSpinBox
+    QPushButton, QTabWidget, QMessageBox, QGroupBox, QLabel, QInputDialog
 )
 from PyQt6.QtCore import Qt
 from sqlalchemy.exc import IntegrityError
@@ -12,6 +12,7 @@ from repositories.product_repo import ProductRepository
 from database.engine import BASE_DIR, DB_PATH
 from decimal import Decimal
 from units import UNITS, PACKAGE_UNITS, normalize_unit
+from ui.widgets import TrimmedDoubleSpinBox
 from datetime import datetime
 
 class DataManagerView(QWidget):
@@ -93,7 +94,7 @@ class DataManagerView(QWidget):
         self.prod_unit_input.setToolTip("What the Amount on a receipt counts")
         self.prod_unit_input.currentTextChanged.connect(self._update_package_enabled)
 
-        self.prod_package_size = QDoubleSpinBox()
+        self.prod_package_size = TrimmedDoubleSpinBox()
         self.prod_package_size.setRange(0, 99999.999)
         self.prod_package_size.setDecimals(3)
         # a space shows the field blank at 0 (no package size); "" would disable it

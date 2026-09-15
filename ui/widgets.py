@@ -1,5 +1,16 @@
-from PyQt6.QtWidgets import QFrame, QLabel, QVBoxLayout
+from PyQt6.QtWidgets import QDoubleSpinBox, QFrame, QLabel, QVBoxLayout
 from PyQt6.QtCore import Qt
+
+
+class TrimmedDoubleSpinBox(QDoubleSpinBox):
+    """Shows only the decimals a value needs: 500, 0.5, 1.016."""
+
+    def textFromValue(self, value):
+        text = super().textFromValue(value)
+        point = self.locale().decimalPoint()
+        if point in text:
+            text = text.rstrip("0").rstrip(point)
+        return text
 
 
 def format_amount(value):
