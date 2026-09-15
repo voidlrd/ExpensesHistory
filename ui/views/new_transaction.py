@@ -6,13 +6,14 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtCore import QDate, Qt, QTimer, pyqtSignal
+from dataclasses import replace
 from decimal import Decimal
 from repositories.reference_repo import ReferenceRepository
 from repositories.product_repo import ProductRepository
 from repositories.transaction_repo import TransactionRepository, line_total
 from ui.widgets import TrimmedDoubleSpinBox, repopulate_combo
 from units import UNITS, normalize_unit
-from receipt_import import build_prompt
+from receipt_import import build_prompt, merge_identical_items
 from ui.views.scan_dialog import ScanPasteDialog
 
 (COL_PRODUCT, COL_OVERRIDE, COL_AMOUNT, COL_UNIT, COL_PRICE,
@@ -595,13 +596,19 @@ class NewTransactionView(QWidget):
                     break
 
         known_names = {p.name.casefold(): p.name for p in self.products}
+        receipt_lines = [replace(item, name=known_names.get(item.name.casefold(), item.name)) for item in scan.items]
+        rows, combined = merge_identical_items(receipt_lines)
+        if combined:
+            notes.insert(0, "Identical receipt lines were combined into one row: "
+                         + ", ".join(f"{name} \u00d7{times}" for name, times in combined.items()))
+
         new_products = []
         self.items_table.setRowCount(0)
-        for item in scan.items:
+        for item in rows:
             self.add_empty_row()
             row = self.items_table.rowCount() - 1
 
-            name = known_names.get(item.name.casefold(), item.name)
+            name = item.name
             if name.casefold() not in known_names and name not in new_products:
                 new_products.append(name)
             self._cell(row, COL_PRODUCT).setCurrentText(name)
@@ -627,7 +634,7 @@ class NewTransactionView(QWidget):
              for i in scan.items),
             Decimal(0)
         )
-        count = len(scan.items)
+        count = len(rows)
         kind = "info"
         if scan.total is None:
             lines = [f"Filled {count} items. The receipt total couldn't be read, so check the items against the receipt."]

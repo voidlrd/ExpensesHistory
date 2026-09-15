@@ -1,6 +1,6 @@
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
@@ -71,6 +71,22 @@ class ReceiptScan:
 
 class ScanParseError(ValueError):
     pass
+
+
+def merge_identical_items(items):
+    """Combine lines with the same name, unit, price and refund flag; returns (items, {name: lines combined})."""
+    merged, positions, counts = [], {}, {}
+    for item in items:
+        key = (item.name.casefold(), item.unit, item.unit_price, item.refund)
+        if key in positions:
+            target = merged[positions[key]]
+            target.amount += item.amount
+            target.discount += item.discount
+            counts[target.name] = counts.get(target.name, 1) + 1
+        else:
+            positions[key] = len(merged)
+            merged.append(replace(item))
+    return merged, counts
 
 
 def build_prompt(stores, payment_types, products):
