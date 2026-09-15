@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from repositories.product_repo import ProductRepository
 from ui.widgets import format_amount, make_stat_card, repopulate_combo
+from units import describe_package, normalize_unit, price_per_base
 from datetime import datetime
 
 class TimeAxisItem(pg.AxisItem):
@@ -66,9 +67,9 @@ class PriceTrackerView(QWidget):
         self.plot_widget.setVisible(False)
         layout.addWidget(self.plot_widget)
 
-        self.table = QTableWidget(0, 4)
+        self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(
-            ["Date", "Store (Counterparty)", "Amount Bought", "Unit Price (after discount)"]
+            ["Date", "Store (Counterparty)", "Amount Bought", "Price (after discount)", "Per kg / l"]
         )
 
         header = self.table.horizontalHeader()
@@ -132,6 +133,15 @@ class PriceTrackerView(QWidget):
             return float(item.price)
         return float((item.amount * item.price) - item.discount) / amount
 
+    @staticmethod
+    def _comparable_price(item, eff_price):
+        product = item.product
+        per_base = price_per_base(eff_price, product.unit_of_measure,
+                                  product.package_size, product.package_unit)
+        if per_base:
+            return float(per_base[0]), per_base[1]
+        return eff_price, normalize_unit(product.unit_of_measure)
+
     def populate_table_and_stats(self, items):
         self.table.setRowCount(0)
         self.plot_widget.clear()
@@ -144,35 +154,41 @@ class PriceTrackerView(QWidget):
         self.plot_widget.setVisible(True)
 
         # items arrive newest-first
-        entries = [(item, self._effective_price(item)) for item in items]
+        entries = []
+        for item in items:
+            eff_price = self._effective_price(item)
+            entries.append((item, eff_price) + self._comparable_price(item, eff_price))
 
-        for row_idx, (item, eff_price) in enumerate(entries):
+        for row_idx, (item, eff_price, price, basis) in enumerate(entries):
             self.table.insertRow(row_idx)
             tx = item.transaction
+            product = item.product
+            unit = normalize_unit(product.unit_of_measure)
             store_name = tx.counterparty.name if tx.counterparty else "Unknown"
 
             self.table.setItem(row_idx, 0, QTableWidgetItem(tx.date.strftime("%Y-%m-%d")))
             self.table.setItem(row_idx, 1, QTableWidgetItem(store_name))
 
-            unit = item.product.unit_of_measure or ""
-            amount_item = QTableWidgetItem(f"{format_amount(item.amount)} {unit}".strip())
-            amount_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            self.table.setItem(row_idx, 2, amount_item)
+            amount_text = f"{format_amount(item.amount)} {unit}"
+            package = describe_package(product.package_size, product.package_unit)
+            if package:
+                amount_text += f" x {package}"
+            self._set_right(row_idx, 2, amount_text)
+            self._set_right(row_idx, 3, f"{eff_price:.2f} {tx.currency_code} / {unit}")
+            per_base = f"{price:.2f} {tx.currency_code} / {basis}" if basis in ("kg", "l") else ""
+            self._set_right(row_idx, 4, per_base)
 
-            price_item = QTableWidgetItem(f"{eff_price:.2f} {tx.currency_code}")
-            price_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            self.table.setItem(row_idx, 3, price_item)
-
-        lowest = min(entries, key=lambda e: e[1])
-        highest = max(entries, key=lambda e: e[1])
+        lowest = min(entries, key=lambda e: e[2])
+        highest = max(entries, key=lambda e: e[2])
         latest = entries[0]
 
+        self.plot_widget.setLabel('left', f"Price per {entries[0][3]}")
         timestamps = []
         prices = []
-        for item, eff_price in reversed(entries):
+        for item, _, price, _ in reversed(entries):
             dt = item.transaction.date
             timestamps.append(datetime(dt.year, dt.month, dt.day).timestamp())
-            prices.append(eff_price)
+            prices.append(price)
 
         self.plot_widget.plot(
             timestamps, prices,
@@ -180,17 +196,22 @@ class PriceTrackerView(QWidget):
             symbol='o', symbolSize=8, symbolBrush='#2196F3'
         )
 
-        self._update_card(self.lowest_price_label, *lowest)
-        self._update_card(self.latest_price_label, *latest)
-        self._update_card(self.highest_price_label, *highest)
+        self._update_card(self.lowest_price_label, lowest)
+        self._update_card(self.latest_price_label, latest)
+        self._update_card(self.highest_price_label, highest)
 
-    def _update_card(self, card_dict, item, eff_price):
+    def _set_right(self, row, col, text):
+        cell = QTableWidgetItem(text)
+        cell.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.table.setItem(row, col, cell)
+
+    def _update_card(self, card_dict, entry):
+        item, _, price, basis = entry
         tx = item.transaction
         store_name = tx.counterparty.name if tx.counterparty else "Unknown"
-        date_str = tx.date.strftime("%b %Y")
 
-        card_dict["value"].setText(f"{eff_price:.2f} {tx.currency_code}")
-        card_dict["sub"].setText(f"{store_name}\n({date_str})")
+        card_dict["value"].setText(f"{price:.2f} {tx.currency_code} / {basis}")
+        card_dict["sub"].setText(f"{store_name}\n({tx.date.strftime('%b %Y')})")
 
     def _reset_stats(self):
         for card in [self.lowest_price_label, self.latest_price_label, self.highest_price_label]:

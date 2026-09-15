@@ -11,6 +11,10 @@ from repositories.reference_repo import ReferenceRepository
 from repositories.product_repo import ProductRepository
 from repositories.transaction_repo import TransactionRepository, line_total
 from ui.widgets import repopulate_combo
+from units import UNITS, normalize_unit
+
+(COL_PRODUCT, COL_OVERRIDE, COL_AMOUNT, COL_UNIT, COL_PRICE,
+ COL_DISCOUNT, COL_REFUND, COL_TOTAL, COL_DELETE) = range(9)
 
 class FastTabSpinBox(QDoubleSpinBox):
     def __init__(self, add_row_callback, *args, **kwargs):
@@ -33,6 +37,7 @@ class NewTransactionView(QWidget):
 
         self.edit_tx_id = edit_tx_id
         self.products = []
+        self.product_units = {}
         self.raw_total = Decimal(0)
 
         self._dup_timer = QTimer(self)
@@ -91,21 +96,19 @@ class NewTransactionView(QWidget):
         form_layout.addRow("Currency:", self.currency_input)
         layout.addLayout(form_layout)
 
-        self.items_table = QTableWidget(0, 8)
-        self.items_table.setHorizontalHeaderLabels(["Product", "Override", "Amount", "Price", "Discount", "Refund", "Total", ""])
+        self.items_table = QTableWidget(0, 9)
+        self.items_table.setHorizontalHeaderLabels(
+            ["Product", "Override", "Amount", "Unit", "Price / unit", "Discount", "Refund", "Total", ""]
+        )
         self.items_table.verticalHeader().setVisible(False)
 
         header = self.items_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)
+        for col in range(self.items_table.columnCount()):
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(COL_PRODUCT, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(COL_OVERRIDE, QHeaderView.ResizeMode.Interactive)
 
-        self.items_table.setColumnWidth(1, 150)
+        self.items_table.setColumnWidth(COL_OVERRIDE, 150)
 
         self.items_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         layout.addWidget(self.items_table)
@@ -144,6 +147,9 @@ class NewTransactionView(QWidget):
 
         self.add_empty_row()
 
+    def _cell(self, row, col):
+        return self.items_table.cellWidget(row, col)
+
     def on_counterparty_changed(self, text):
         self._loc_timer.start()
         self.check_for_duplicate()
@@ -166,6 +172,7 @@ class NewTransactionView(QWidget):
         curr_cp = self.counterparty_input.currentText()
 
         self.products = self.product_repo.get_all_products(include_hidden=False)
+        self.product_units = {p.name.casefold(): normalize_unit(p.unit_of_measure) for p in self.products}
 
         repopulate_combo(
             self.currency_input,
@@ -211,13 +218,14 @@ class NewTransactionView(QWidget):
         for item in tx.items:
             self.add_empty_row()
             row = self.items_table.rowCount() - 1
-            name = item.product.name if item.product else ""
-            self.items_table.cellWidget(row, 0).setCurrentText(name)
-            self.items_table.cellWidget(row, 1).setText(item.item_name_override or "")
-            self.items_table.cellWidget(row, 2).setValue(float(item.amount))
-            self.items_table.cellWidget(row, 3).setValue(float(item.price))
-            self.items_table.cellWidget(row, 4).setValue(float(item.discount))
-            self.items_table.cellWidget(row, 5).refund_cb.setChecked(item.refund)
+            self._cell(row, COL_PRODUCT).setCurrentText(item.product.name if item.product else "")
+            self._cell(row, COL_OVERRIDE).setText(item.item_name_override or "")
+            self._cell(row, COL_AMOUNT).setValue(float(item.amount))
+            if item.product:
+                self._cell(row, COL_UNIT).setCurrentText(normalize_unit(item.product.unit_of_measure))
+            self._cell(row, COL_PRICE).setValue(float(item.price))
+            self._cell(row, COL_DISCOUNT).setValue(float(item.discount))
+            self._cell(row, COL_REFUND).refund_cb.setChecked(item.refund)
 
         if self.items_table.rowCount() == 0:
             self.add_empty_row()
@@ -237,7 +245,7 @@ class NewTransactionView(QWidget):
         row_count = self.items_table.rowCount()
 
         if row_count > 0:
-            last_product_cb = self.items_table.cellWidget(row_count - 1, 0)
+            last_product_cb = self._cell(row_count - 1, COL_PRODUCT)
             if last_product_cb is not None and not last_product_cb.currentText().strip():
                 last_product_cb.setFocus()
                 return
@@ -257,30 +265,40 @@ class NewTransactionView(QWidget):
 
         for p in self.products:
             product_cb.addItem(p.name, userData=p.id)
-        self.items_table.setCellWidget(row_idx, 0, product_cb)
+        self.items_table.setCellWidget(row_idx, COL_PRODUCT, product_cb)
 
         override_le = QLineEdit()
         override_le.setPlaceholderText("Optional...")
-        self.items_table.setCellWidget(row_idx, 1, override_le)
+        self.items_table.setCellWidget(row_idx, COL_OVERRIDE, override_le)
 
         amount_sb = QDoubleSpinBox()
         amount_sb.setRange(0.001, 9999.999)
         amount_sb.setDecimals(3)
         amount_sb.setValue(1.0)
         amount_sb.valueChanged.connect(self.calculate_totals)
-        self.items_table.setCellWidget(row_idx, 2, amount_sb)
+        self.items_table.setCellWidget(row_idx, COL_AMOUNT, amount_sb)
+
+        # click to change; Tab skips it so row entry stays fast
+        unit_cb = QComboBox()
+        unit_cb.addItems(UNITS)
+        unit_cb.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+        unit_cb.setToolTip("pcs: Amount is a count. kg / l: Amount is the weighed quantity.")
+        self.items_table.setCellWidget(row_idx, COL_UNIT, unit_cb)
+        product_cb.currentTextChanged.connect(
+            lambda text, cb=unit_cb: self._apply_known_unit(text, cb)
+        )
 
         price_sb = QDoubleSpinBox()
         price_sb.setRange(0.00, 99999.99)
         price_sb.setDecimals(2)
         price_sb.valueChanged.connect(self.calculate_totals)
-        self.items_table.setCellWidget(row_idx, 3, price_sb)
+        self.items_table.setCellWidget(row_idx, COL_PRICE, price_sb)
 
         disc_sb = FastTabSpinBox(self.add_empty_row)
         disc_sb.setRange(0.00, 99999.99)
         disc_sb.setDecimals(2)
         disc_sb.valueChanged.connect(self.calculate_totals)
-        self.items_table.setCellWidget(row_idx, 4, disc_sb)
+        self.items_table.setCellWidget(row_idx, COL_DISCOUNT, disc_sb)
 
         refund_cb = QCheckBox()
         refund_cb.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -291,23 +309,28 @@ class NewTransactionView(QWidget):
         chk_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         chk_layout.setContentsMargins(0,0,0,0)
         chk_widget.refund_cb = refund_cb
-        self.items_table.setCellWidget(row_idx, 5, chk_widget)
+        self.items_table.setCellWidget(row_idx, COL_REFUND, chk_widget)
 
         row_total_lbl = QLabel("0.00")
         row_total_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.items_table.setCellWidget(row_idx, 6, row_total_lbl)
+        self.items_table.setCellWidget(row_idx, COL_TOTAL, row_total_lbl)
 
         del_btn = QPushButton("X")
         del_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         del_btn.setStyleSheet("color: red; font-weight: bold; max-width: 30px;")
         del_btn.clicked.connect(lambda checked, b=del_btn: self.remove_row(b))
-        self.items_table.setCellWidget(row_idx, 7, del_btn)
+        self.items_table.setCellWidget(row_idx, COL_DELETE, del_btn)
 
         product_cb.setFocus()
 
+    def _apply_known_unit(self, product_name, unit_cb):
+        unit = self.product_units.get(product_name.strip().casefold())
+        if unit:
+            unit_cb.setCurrentText(unit)
+
     def remove_row(self, btn):
         for row in range(self.items_table.rowCount()):
-            if self.items_table.cellWidget(row, 7) == btn:
+            if self._cell(row, COL_DELETE) == btn:
                 self.items_table.removeRow(row)
                 self.calculate_totals()
                 break
@@ -316,11 +339,11 @@ class NewTransactionView(QWidget):
         raw_total = Decimal(0)
 
         for row in range(self.items_table.rowCount()):
-            amount_widget = self.items_table.cellWidget(row, 2)
-            price_widget = self.items_table.cellWidget(row, 3)
-            disc_widget = self.items_table.cellWidget(row, 4)
-            refund_widget = self.items_table.cellWidget(row, 5)
-            total_label = self.items_table.cellWidget(row, 6)
+            amount_widget = self._cell(row, COL_AMOUNT)
+            price_widget = self._cell(row, COL_PRICE)
+            disc_widget = self._cell(row, COL_DISCOUNT)
+            refund_widget = self._cell(row, COL_REFUND)
+            total_label = self._cell(row, COL_TOTAL)
 
             if None not in (amount_widget, price_widget, disc_widget, total_label, refund_widget):
                 row_total = line_total(
@@ -362,8 +385,8 @@ class NewTransactionView(QWidget):
         if isinstance(focused, QComboBox) and focused.completer():
             focused.completer().popup().hide()
         for row in range(self.items_table.rowCount()):
-            for col in (2, 3, 4):
-                widget = self.items_table.cellWidget(row, col)
+            for col in (COL_AMOUNT, COL_PRICE, COL_DISCOUNT):
+                widget = self._cell(row, col)
                 if widget is not None:
                     widget.interpretText()
 
@@ -381,15 +404,16 @@ class NewTransactionView(QWidget):
         blank_rows = 0
 
         for row in range(self.items_table.rowCount()):
-            product_cb = self.items_table.cellWidget(row, 0)
-            override_le = self.items_table.cellWidget(row, 1)
-            amount_sb = self.items_table.cellWidget(row, 2)
-            price_sb = self.items_table.cellWidget(row, 3)
-            disc_sb = self.items_table.cellWidget(row, 4)
-            refund_widget = self.items_table.cellWidget(row, 5)
+            product_cb = self._cell(row, COL_PRODUCT)
+            override_le = self._cell(row, COL_OVERRIDE)
+            amount_sb = self._cell(row, COL_AMOUNT)
+            unit_cb = self._cell(row, COL_UNIT)
+            price_sb = self._cell(row, COL_PRICE)
+            disc_sb = self._cell(row, COL_DISCOUNT)
+            refund_widget = self._cell(row, COL_REFUND)
 
             # never test a QComboBox for truth: PyQt maps __len__ to count()
-            if None in (product_cb, override_le, amount_sb, price_sb, disc_sb, refund_widget):
+            if None in (product_cb, override_le, amount_sb, unit_cb, price_sb, disc_sb, refund_widget):
                 continue
 
             product_name = product_cb.currentText().strip()
@@ -401,6 +425,7 @@ class NewTransactionView(QWidget):
                 "product_name": product_name,
                 "override": override_le.text().strip() or None,
                 "amount": amount_sb.value(),
+                "unit": unit_cb.currentText(),
                 "price": price_sb.value(),
                 "discount": disc_sb.value(),
                 "refund": refund_widget.refund_cb.isChecked()
@@ -413,7 +438,7 @@ class NewTransactionView(QWidget):
             else:
                 message = "Please add at least one item row."
             QMessageBox.warning(self, "Validation Error", message)
-            first_row_cb = self.items_table.cellWidget(0, 0)
+            first_row_cb = self._cell(0, COL_PRODUCT)
             if first_row_cb is not None:
                 first_row_cb.setFocus()
             return

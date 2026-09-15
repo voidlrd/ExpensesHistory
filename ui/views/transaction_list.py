@@ -10,6 +10,7 @@ from repositories.reference_repo import ReferenceRepository
 from repositories.income_repo import IncomeRepository
 from ui.views.new_transaction import NewTransactionView
 from ui.widgets import format_amount, repopulate_combo
+from units import describe_package, normalize_unit
 
 class NumericItem(QTableWidgetItem):
     def __init__(self, value, text=None):
@@ -171,7 +172,7 @@ class TransactionDetailDialog(QDialog):
         self.table.setColumnWidth(1, 120)
         self.table.setColumnWidth(2, 90)
         self.table.setColumnWidth(3, 60)
-        self.table.setColumnWidth(4, 50)
+        self.table.setColumnWidth(4, 90)
         self.table.setColumnWidth(5, 60)
         self.table.setColumnWidth(6, 70)
         self.table.setColumnWidth(7, 80)
@@ -195,7 +196,12 @@ class TransactionDetailDialog(QDialog):
             self.table.setItem(row_idx, 3,
                                NumericItem(float(item.amount), format_amount(item.amount)))
 
-            unit_name = item.product.unit_of_measure if item.product else ""
+            unit_name = ""
+            if item.product:
+                unit_name = normalize_unit(item.product.unit_of_measure)
+                package = describe_package(item.product.package_size, item.product.package_unit)
+                if package:
+                    unit_name = f"{unit_name} ({package})"
             self.table.setItem(row_idx, 4, QTableWidgetItem(unit_name))
 
             self.table.setItem(row_idx, 5, NumericItem(float(item.price)))

@@ -6,6 +6,7 @@ SQLAlchemy on top of a local SQLite database.
 ## Features
 
 - Record receipts line by line, with per-item amount, price, discount and refund flags
+- Per-product units (pcs / kg / l) with an optional package size, so prices compare per kg or litre
 - Track income alongside expenses, in multiple currencies
 - Edit or delete any saved transaction or income record
 - Per-month dashboard: income, expenses, net balance, and breakdowns by store and category
@@ -34,6 +35,7 @@ The result lands in `dist/ExpenseTracker.exe`. It reads and writes
 ```
 main.py             entry point: logging, database init, main window
 app_logging.py      rotating file log + excepthook so crashes are recorded
+units.py            unit normalisation and price-per-kg/l maths
 database/
   models.py         SQLAlchemy models
   engine.py         engine, session factory, seed data
@@ -48,6 +50,7 @@ ui/
 
 - The database lives at `expense_tracker.db` in the project root (or next to the
   packaged executable) and is not tracked by git.
-- There is no migration system. `init_db()` only creates missing tables, so after
-  changing a model, delete `expense_tracker.db` and let it be recreated.
+- There is no migration system. `init_db()` only creates missing tables. After
+  changing a model, recreate a development database; for a database you want to
+  keep, back it up and apply the additive `ALTER TABLE` by hand.
 - Runtime errors are written to `logs/expense_tracker.log`.

@@ -4,6 +4,7 @@ from sqlalchemy.orm import joinedload
 from database.engine import get_session
 from database.models import TransactionRecord, Item, Product
 from repositories.reference_repo import find_counterparty, get_or_create_counterparty
+from units import normalize_unit
 
 def line_total(amount, price, discount, refund):
     total = (Decimal(str(amount)) * Decimal(str(price))) - Decimal(str(discount))
@@ -15,12 +16,18 @@ def _write_items(session, transaction, items_data):
     for item_data in items_data:
         product_name = item_data["product_name"]
         product = products.get(product_name.casefold())
+        unit = item_data.get("unit")
 
         if not product:
-            product = Product(name=product_name)
+            product = Product(name=product_name, unit_of_measure=normalize_unit(unit) if unit else None)
             session.add(product)
             session.flush()
             products[product_name.casefold()] = product
+        elif unit and product.unit_of_measure != normalize_unit(unit):
+            product.unit_of_measure = normalize_unit(unit)
+            if product.unit_of_measure != "pcs":
+                product.package_size = None
+                product.package_unit = None
 
         session.add(Item(
             transaction_id=transaction.id,

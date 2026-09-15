@@ -3,13 +3,15 @@ from contextlib import closing
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QListWidget,
     QListWidgetItem, QFormLayout, QLineEdit, QComboBox,
-    QPushButton, QTabWidget, QMessageBox, QGroupBox, QLabel, QInputDialog
+    QPushButton, QTabWidget, QMessageBox, QGroupBox, QLabel, QInputDialog, QDoubleSpinBox
 )
 from PyQt6.QtCore import Qt
 from sqlalchemy.exc import IntegrityError
 from repositories.reference_repo import ReferenceRepository
 from repositories.product_repo import ProductRepository
 from database.engine import BASE_DIR, DB_PATH
+from decimal import Decimal
+from units import UNITS, PACKAGE_UNITS, normalize_unit
 from datetime import datetime
 
 class DataManagerView(QWidget):
@@ -86,8 +88,20 @@ class DataManagerView(QWidget):
         prod_form_layout = QFormLayout(prod_form_group)
         self.prod_name_input = QLineEdit()
         self.prod_brand_input = QLineEdit()
-        self.prod_unit_input = QLineEdit()
-        self.prod_unit_input.setPlaceholderText("e.g., kg, liters, pieces")
+        self.prod_unit_input = QComboBox()
+        self.prod_unit_input.addItems(UNITS)
+        self.prod_unit_input.setToolTip("What the Amount on a receipt counts")
+        self.prod_unit_input.currentTextChanged.connect(self._update_package_enabled)
+
+        self.prod_package_size = QDoubleSpinBox()
+        self.prod_package_size.setRange(0, 99999.999)
+        self.prod_package_size.setDecimals(3)
+        self.prod_package_size.setSpecialValueText("none")
+        self.prod_package_unit = QComboBox()
+        self.prod_package_unit.addItems(PACKAGE_UNITS)
+        package_layout = QHBoxLayout()
+        package_layout.addWidget(self.prod_package_size)
+        package_layout.addWidget(self.prod_package_unit)
 
         self.prod_cat_input = QComboBox()
         self.prod_cat_input.setEditable(True)
@@ -107,7 +121,8 @@ class DataManagerView(QWidget):
         prod_form_layout.addRow("Name:", self.prod_name_input)
         prod_form_layout.addRow("Brand:", self.prod_brand_input)
         prod_form_layout.addRow("Category:", self.prod_cat_input)
-        prod_form_layout.addRow("Unit of Measure:", self.prod_unit_input)
+        prod_form_layout.addRow("Unit:", self.prod_unit_input)
+        prod_form_layout.addRow("Package size:", package_layout)
         prod_form_layout.addRow("", prod_btn_layout)
 
         prod_layout.addWidget(prod_form_group, 1)
@@ -261,7 +276,11 @@ class DataManagerView(QWidget):
         p = current.data(Qt.ItemDataRole.UserRole)
         self.prod_name_input.setText(p.name)
         self.prod_brand_input.setText(p.brand or "")
-        self.prod_unit_input.setText(p.unit_of_measure or "")
+        self.prod_unit_input.setCurrentText(normalize_unit(p.unit_of_measure))
+        self.prod_package_size.setValue(float(p.package_size or 0))
+        if p.package_unit:
+            self.prod_package_unit.setCurrentText(p.package_unit)
+        self._update_package_enabled()
         self.prod_hide_btn.setText("Unhide" if p.hidden else "Hide/Archive")
 
         if p.category_id:
@@ -271,6 +290,11 @@ class DataManagerView(QWidget):
         else:
             self.prod_cat_input.setCurrentIndex(0)
 
+    def _update_package_enabled(self, *args):
+        counted = self.prod_unit_input.currentText() == "pcs"
+        self.prod_package_size.setEnabled(counted)
+        self.prod_package_unit.setEnabled(counted)
+
     def save_prod_changes(self):
         item = self.prod_list.currentItem()
         if not item: return
@@ -278,7 +302,10 @@ class DataManagerView(QWidget):
         p = item.data(Qt.ItemDataRole.UserRole)
         new_name = self.prod_name_input.text().strip()
         brand = self.prod_brand_input.text().strip()
-        unit = self.prod_unit_input.text().strip()
+        unit = self.prod_unit_input.currentText()
+        size = self.prod_package_size.value()
+        package_size = Decimal(f"{size:.3f}") if size > 0 else None
+        package_unit = self.prod_package_unit.currentText() if package_size else None
         cat_name = self.prod_cat_input.currentText().strip()
 
         if not new_name:
@@ -286,7 +313,8 @@ class DataManagerView(QWidget):
             return
 
         try:
-            self.product_repo.update_product(p.id, new_name, brand, unit, cat_name)
+            self.product_repo.update_product(p.id, new_name, brand, unit, cat_name,
+                                             package_size, package_unit)
         except ValueError as e:
             QMessageBox.warning(self, "Error", str(e))
             return

@@ -2,6 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 from database.engine import get_session
 from database.models import Product, Item, TransactionRecord, ItemCategory
+from units import normalize_unit
 
 class ProductRepository:
     @staticmethod
@@ -52,7 +53,8 @@ class ProductRepository:
             return session.scalars(stmt).all()
 
     @staticmethod
-    def update_product(product_id, new_name, brand, unit, category_name=None):
+    def update_product(product_id, new_name, brand, unit, category_name=None,
+                       package_size=None, package_unit=None):
         with get_session() as session:
             p = session.get(Product, product_id)
             if p:
@@ -67,7 +69,13 @@ class ProductRepository:
 
                 p.name = new_name
                 p.brand = brand or None
-                p.unit_of_measure = unit or None
+                p.unit_of_measure = normalize_unit(unit)
+                if p.unit_of_measure == "pcs" and package_size:
+                    p.package_size = package_size
+                    p.package_unit = package_unit
+                else:
+                    p.package_size = None
+                    p.package_unit = None
 
                 if category_name:
                     folded = category_name.casefold()
