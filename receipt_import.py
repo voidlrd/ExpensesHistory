@@ -15,7 +15,7 @@ Reply with ONLY one JSON code block and no other text, in exactly this shape:
 {
   "store": "Kaufland",
   "date": "2026-08-18",
-  "receipt_number": "0123",
+  "receipt_number": "12345678902026081814301200017",
   "currency": "RON",
   "payment_type": "Debit Card",
   "total": 23.92,
@@ -36,6 +36,7 @@ Rules:
 - refund is true for returned or cancelled products (for example "STORNO" or "RETUR"), still with a positive amount and unit_price.
 - Fees and deposits printed as lines (bags, "GARANTIE SGR", eco tax) are items too.
 - total is the final amount paid, exactly as printed.
+- receipt_number is the long unique ID printed near the bottom (for example after "ID UNIC"), all digits as one string without spaces. Only when the receipt has no such ID, use its shorter receipt number (for example after "BF" or "BON").
 - Numbers are plain JSON numbers with a dot as the decimal separator and no currency symbols.
 - date is YYYY-MM-DD. currency is a 3-letter code ("LEI" is "RON").
 - store is the short shop or brand name, not the legal company name. Use a known store below when it is the same shop.
@@ -146,6 +147,11 @@ def _number(value, what, default=None):
         raise ScanParseError(f"{what} should be a number, not {value!r}.") from None
 
 
+def _receipt_number(value):
+    text = _text(value)
+    return re.sub(r"\s+", "", text) if text else None
+
+
 def _date(value, notes):
     text = _text(value)
     if not text:
@@ -214,7 +220,7 @@ def parse_scan(text):
         items=items,
         store=_text(data.get("store")),
         date=_date(data.get("date"), notes),
-        receipt_number=_text(data.get("receipt_number")),
+        receipt_number=_receipt_number(data.get("receipt_number")),
         currency=currency,
         payment_type=_text(data.get("payment_type")),
         total=_number(data.get("total"), "The receipt total"),
