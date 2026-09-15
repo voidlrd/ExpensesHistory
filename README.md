@@ -13,8 +13,9 @@ SQLAlchemy on top of a local SQLite database.
 - Price tracker: effective unit price history per product, per currency, with a chart
 - Manage stores and their locations
 - Products tab: search and filter by category, brand and unit; set categories in bulk, hide, merge duplicates, and delete products that were never bought
-- One-click database backup
-- Fill a receipt from a photo using any AI chat app (Claude, Gemini, ...), then review and save
+- One-click database backup, plus an automatic backup at startup (the 5 most recent are kept)
+- Fill a receipt from a photo using any AI chat app (Claude, Gemini, ...), with category suggestions for new products, then review and save
+- Warns when a receipt with the same ID UNIC was already saved
 
 ## Scanning a receipt with AI
 

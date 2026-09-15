@@ -1,5 +1,6 @@
-from PyQt6.QtWidgets import QDoubleSpinBox, QFrame, QLabel, QVBoxLayout
-from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QDoubleSpinBox, QFrame, QLabel, QVBoxLayout, QWidget
+from PyQt6.QtGui import QColor, QPainter, QPen
+from PyQt6.QtCore import QEvent, Qt
 
 
 class TrimmedDoubleSpinBox(QDoubleSpinBox):
@@ -11,6 +12,61 @@ class TrimmedDoubleSpinBox(QDoubleSpinBox):
         if point in text:
             text = text.rstrip("0").rstrip(point)
         return text
+
+
+class RowOutline(QWidget):
+    """Draws a border around one row of a QTableWidget, on top of its cell widgets."""
+
+    def __init__(self, table, anchor_column=0, color="#2196F3"):
+        super().__init__(table.viewport())
+        self.table = table
+        self.anchor_column = anchor_column
+        self.color = QColor(color)
+        self.anchor = None
+
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        table.viewport().installEventFilter(self)
+        table.horizontalScrollBar().valueChanged.connect(self.update)
+        table.verticalScrollBar().valueChanged.connect(self.update)
+        table.horizontalHeader().sectionResized.connect(self.update)
+        table.verticalHeader().sectionResized.connect(self.update)
+        table.model().rowsInserted.connect(self.update)
+        table.model().rowsRemoved.connect(self.update)
+        self.resize(table.viewport().size())
+        self.show()
+
+    def eventFilter(self, obj, event):
+        if obj is self.table.viewport() and event.type() == QEvent.Type.Resize:
+            self.resize(obj.size())
+        return False
+
+    def set_anchor(self, widget):
+        """widget: the anchor-column cell widget of the row to outline."""
+        self.anchor = widget
+        # cell widgets added later stack above us
+        self.raise_()
+        self.update()
+
+    def current_row(self):
+        if self.anchor is None:
+            return -1
+        for row in range(self.table.rowCount()):
+            if self.table.cellWidget(row, self.anchor_column) is self.anchor:
+                return row
+        return -1
+
+    def paintEvent(self, event):
+        row = self.current_row()
+        if row < 0:
+            return
+        model = self.table.model()
+        rect = self.table.visualRect(model.index(row, 0)).united(
+            self.table.visualRect(model.index(row, self.table.columnCount() - 1))
+        ).adjusted(1, 1, -1, -1)
+        painter = QPainter(self)
+        painter.setPen(QPen(self.color, 2))
+        painter.drawRect(rect)
 
 
 def format_amount(value):

@@ -11,13 +11,15 @@ from decimal import Decimal
 from repositories.reference_repo import ReferenceRepository
 from repositories.product_repo import ProductRepository
 from repositories.transaction_repo import TransactionRepository, line_total
-from ui.widgets import TrimmedDoubleSpinBox, repopulate_combo
+from ui.widgets import RowOutline, TrimmedDoubleSpinBox, repopulate_combo
 from units import UNITS, normalize_unit
 from receipt_import import build_prompt, merge_identical_items
 from ui.views.scan_dialog import ScanPasteDialog
 
 (COL_PRODUCT, COL_OVERRIDE, COL_AMOUNT, COL_UNIT, COL_PRICE,
  COL_DISCOUNT, COL_REFUND, COL_TOTAL, COL_DELETE) = range(9)
+
+DUPLICATE_TEXT = "⚠️ Duplicate Detected!"
 
 class FastTabSpinBox(QDoubleSpinBox):
     def __init__(self, add_row_callback, *args, **kwargs):
@@ -41,6 +43,7 @@ class NewTransactionView(QWidget):
         self.edit_tx_id = edit_tx_id
         self.products = []
         self.product_units = {}
+        self.scan_categories = {}
         self.raw_total = Decimal(0)
 
         self._dup_timer = QTimer(self)
@@ -98,7 +101,7 @@ class NewTransactionView(QWidget):
         self.location_label.setVisible(False)
 
         self.receipt_number_input = QLineEdit()
-        self.receipt_number_input.setPlaceholderText("e.g., Bon Fiscal number")
+        self.receipt_number_input.setPlaceholderText("The long ID UNIC at the bottom of the receipt")
 
         self.payment_type_input = QComboBox()
         self.currency_input = QComboBox()
@@ -127,6 +130,7 @@ class NewTransactionView(QWidget):
 
         self.items_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         layout.addWidget(self.items_table)
+        self.row_outline = RowOutline(self.items_table, anchor_column=COL_PRODUCT)
 
         self.scan_summary = QLabel()
         self.scan_summary.setWordWrap(True)
@@ -138,7 +142,7 @@ class NewTransactionView(QWidget):
         layout.addWidget(self.add_item_btn)
 
         footer_layout = QHBoxLayout()
-        self.duplicate_warning_label = QLabel("⚠️ Duplicate Detected!")
+        self.duplicate_warning_label = QLabel(DUPLICATE_TEXT)
         self.duplicate_warning_label.setStyleSheet("color: #F44336; font-weight: bold; font-size: 14px;")
         self.duplicate_warning_label.setVisible(False)
 
@@ -160,7 +164,9 @@ class NewTransactionView(QWidget):
 
         self.date_input.dateChanged.connect(self.check_for_duplicate)
         self.currency_input.currentIndexChanged.connect(self.check_for_duplicate)
+        self.receipt_number_input.textChanged.connect(self.check_for_duplicate)
         self.counterparty_input.currentTextChanged.connect(self.on_counterparty_changed)
+        QApplication.instance().focusChanged.connect(self._on_focus_changed)
 
         save_shortcut = QShortcut(QKeySequence.StandardKey.Save, self)
         save_shortcut.activated.connect(self.save_transaction)
@@ -169,6 +175,20 @@ class NewTransactionView(QWidget):
 
     def _cell(self, row, col):
         return self.items_table.cellWidget(row, col)
+
+    def _on_focus_changed(self, old, new):
+        if new is None:
+            return
+        try:
+            for row in range(self.items_table.rowCount()):
+                for col in range(self.items_table.columnCount()):
+                    widget = self._cell(row, col)
+                    if widget is not None and (widget is new or widget.isAncestorOf(new)):
+                        self.row_outline.set_anchor(self._cell(row, COL_PRODUCT))
+                        return
+        except RuntimeError:
+            # this form was closed (e.g. an edit dialog) and its widgets are gone
+            pass
 
     def on_counterparty_changed(self, text):
         self._loc_timer.start()
@@ -272,6 +292,7 @@ class NewTransactionView(QWidget):
             last_product_cb = self._cell(row_count - 1, COL_PRODUCT)
             if last_product_cb is not None and not last_product_cb.currentText().strip():
                 last_product_cb.setFocus()
+                self.row_outline.set_anchor(last_product_cb)
                 return
 
         row_idx = self.items_table.rowCount()
@@ -348,6 +369,7 @@ class NewTransactionView(QWidget):
         del_btn.clicked.connect(lambda checked, b=del_btn: self.remove_row(b))
         self.items_table.setCellWidget(row_idx, COL_DELETE, del_btn)
 
+        self.row_outline.set_anchor(product_cb)
         product_cb.setFocus()
 
     @staticmethod
@@ -399,7 +421,19 @@ class NewTransactionView(QWidget):
     def check_for_duplicate(self):
         self._dup_timer.start()
 
+    @staticmethod
+    def _describe(transaction):
+        store = transaction.counterparty.name if transaction.counterparty else "Unknown"
+        return f"{transaction.date}, {store}, {transaction.total_amount:.2f} {transaction.currency_code}"
+
     def _run_duplicate_check(self):
+        matches = TransactionRepository.find_by_receipt_number(self.receipt_number_input.text(), self.edit_tx_id)
+        if matches:
+            self.duplicate_warning_label.setText(f"⚠️ Receipt already saved: {self._describe(matches[0])}")
+            self.duplicate_warning_label.setVisible(True)
+            return
+        self.duplicate_warning_label.setText(DUPLICATE_TEXT)
+
         counterparty_name = self.counterparty_input.currentText().strip()
 
         if not counterparty_name or self.raw_total == 0:
@@ -464,7 +498,8 @@ class NewTransactionView(QWidget):
                 "unit": unit_cb.currentText(),
                 "price": price_sb.value(),
                 "discount": disc_sb.value(),
-                "refund": refund_widget.refund_cb.isChecked()
+                "refund": refund_widget.refund_cb.isChecked(),
+                "category": self.scan_categories.get(product_name.casefold()),
             })
 
         if not items_data:
@@ -490,9 +525,20 @@ class NewTransactionView(QWidget):
 
         final_amount = self.raw_total
 
-        is_duplicate = TransactionRepository.check_potential_duplicate(
-            date, counterparty_name, final_amount, currency_code, exclude_id=self.edit_tx_id)
-        if is_duplicate:
+        receipt_matches = TransactionRepository.find_by_receipt_number(receipt_no, exclude_id=self.edit_tx_id)
+        if receipt_matches:
+            saved = "\n".join(f"• {self._describe(t)}" for t in receipt_matches)
+            reply = QMessageBox.question(
+                self,
+                "Receipt Already Saved",
+                f"A receipt with ID {receipt_no} is already saved:\n\n{saved}\n\nSave it again anyway?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+        elif TransactionRepository.check_potential_duplicate(
+                date, counterparty_name, final_amount, currency_code, exclude_id=self.edit_tx_id):
             reply = QMessageBox.question(
                 self,
                 "Potential Duplicate Detected",
@@ -544,8 +590,9 @@ class NewTransactionView(QWidget):
     def copy_scan_prompt(self):
         stores = [cp.name for cp in self.ref_repo.get_all_counterparties()]
         payment_types = [self.payment_type_input.itemText(i) for i in range(self.payment_type_input.count())]
-        products = [(p.name, normalize_unit(p.unit_of_measure)) for p in self.products]
-        QApplication.clipboard().setText(build_prompt(stores, payment_types, products))
+        categories = {c.id: c.name for c in self.ref_repo.get_all_item_categories()}
+        products = [(p.name, normalize_unit(p.unit_of_measure), categories.get(p.category_id)) for p in self.products]
+        QApplication.clipboard().setText(build_prompt(stores, payment_types, products, list(categories.values())))
         self._show_scan_message(
             "Prompt copied. In Claude or Gemini, attach the receipt photo (or several for a long receipt), "
             "paste the prompt and send it. Then copy the whole reply and click \"2. Paste AI Result\"."
@@ -575,6 +622,7 @@ class NewTransactionView(QWidget):
                 return
 
         notes = list(scan.notes)
+        self.scan_categories = {}
 
         if scan.date:
             self.date_input.setDate(QDate(scan.date.year, scan.date.month, scan.date.day))
@@ -596,25 +644,39 @@ class NewTransactionView(QWidget):
                     break
 
         known_names = {p.name.casefold(): p.name for p in self.products}
+        known_category_ids = {p.name.casefold(): p.category_id for p in self.products}
+        categories = {c.name.casefold(): c.name for c in self.ref_repo.get_all_item_categories()}
+
         receipt_lines = [replace(item, name=known_names.get(item.name.casefold(), item.name)) for item in scan.items]
         rows, combined = merge_identical_items(receipt_lines)
         if combined:
             notes.insert(0, "Identical receipt lines were combined into one row: "
-                         + ", ".join(f"{name} \u00d7{times}" for name, times in combined.items()))
+                         + ", ".join(f"{name} ×{times}" for name, times in combined.items()))
 
         new_products = []
+        categorised = []
         self.items_table.setRowCount(0)
         for item in rows:
             self.add_empty_row()
             row = self.items_table.rowCount() - 1
 
             name = item.name
-            if name.casefold() not in known_names and name not in new_products:
-                new_products.append(name)
+            key = name.casefold()
+            is_new = key not in known_names
+            if is_new or known_category_ids.get(key) is None:
+                suggested = categories.get(item.category.casefold()) if item.category else None
+                if item.category and not suggested:
+                    notes.append(f"{name}: the suggested category \"{item.category}\" isn't one of yours, so it was left empty.")
+                if suggested and key not in self.scan_categories:
+                    self.scan_categories[key] = suggested
+                    if not is_new:
+                        categorised.append(f"{name} ({suggested})")
+                if is_new and all(n != name for n, _ in new_products):
+                    new_products.append((name, suggested))
             self._cell(row, COL_PRODUCT).setCurrentText(name)
 
             amount = float(item.amount)
-            unit = self.product_units.get(name.casefold()) or item.unit
+            unit = self.product_units.get(key) or item.unit
             if unit == "pcs" and item.unit != "pcs" and not amount.is_integer():
                 unit = item.unit
                 notes.append(f"{name} was weighed ({amount:g} {unit}), so saving will change its unit to {unit}.")
@@ -627,35 +689,34 @@ class NewTransactionView(QWidget):
 
         self.calculate_totals()
 
-        # receipts round every line to cents, so compare the same way
-        cent = Decimal("0.01")
-        items_total = sum(
-            (line_total(i.amount, i.unit_price, i.discount, i.refund).quantize(cent, rounding="ROUND_HALF_UP")
-             for i in scan.items),
-            Decimal(0)
-        )
+        items_total = sum((line_total(i.amount, i.unit_price, i.discount, i.refund) for i in scan.items), Decimal(0))
+        receipt_total = scan.total.quantize(Decimal("0.01"), rounding="ROUND_HALF_UP") if scan.total is not None else None
         count = len(rows)
         kind = "info"
-        if scan.total is None:
+        if receipt_total is None:
             lines = [f"Filled {count} items. The receipt total couldn't be read, so check the items against the receipt."]
-        elif items_total == scan.total.quantize(cent, rounding="ROUND_HALF_UP"):
+        elif items_total == receipt_total:
             kind = "ok"
-            lines = [f"\u2713 Filled {count} items. They add up to {items_total:.2f}, the same as the receipt total."]
+            lines = [f"✓ Filled {count} items. They add up to {items_total:.2f}, the same as the receipt total."]
         else:
             kind = "warn"
             lines = [
-                f"\u26a0 Filled {count} items, but they add up to {items_total:.2f} while the receipt total is "
-                f"{scan.total:.2f} (difference {items_total - scan.total:+.2f}). "
+                f"⚠ Filled {count} items, but they add up to {items_total:.2f} while the receipt total is "
+                f"{receipt_total:.2f} (difference {items_total - receipt_total:+.2f}). "
                 "Check the items against the receipt before saving."
             ]
         if new_products:
-            lines.append("New products that will be created: " + ", ".join(new_products))
-        lines += [f"\u2022 {note}" for note in notes]
+            lines.append("New products that will be created: "
+                         + ", ".join(f"{name} ({category or 'no category'})" for name, category in new_products))
+        if categorised:
+            lines.append("Categories that will be added to existing products: " + ", ".join(categorised))
+        lines += [f"• {note}" for note in notes]
         self._show_scan_message("\n".join(lines), kind)
 
     def reset_form(self):
         self.receipt_number_input.clear()
         self.scan_summary.setVisible(False)
+        self.scan_categories = {}
         self.items_table.setRowCount(0)
         self.date_input.setDate(QDate.currentDate())
 

@@ -81,10 +81,9 @@ class ReportsRepository:
         start_date, end_date = ReportsRepository._get_month_bounds(year, month)
 
         with get_session() as session:
-            row_total = case(
-                (Item.refund == True, -((Item.amount * Item.price) - Item.discount)),
-                else_=((Item.amount * Item.price) - Item.discount)
-            )
+            # round each line to the cent, like the receipt and the saved totals
+            line = func.round((Item.amount * Item.price) - Item.discount, 2)
+            row_total = case((Item.refund == True, -line), else_=line)
 
             stmt = (
                 select(ItemCategory.name, func.sum(row_total).label("total"))

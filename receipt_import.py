@@ -20,9 +20,9 @@ Reply with ONLY one JSON code block and no other text, in exactly this shape:
   "payment_type": "Debit Card",
   "total": 23.92,
   "items": [
-    {"name": "Banane", "amount": 1.016, "unit": "kg", "unit_price": 8.99, "discount": 0, "refund": false},
-    {"name": "Rosii cherry", "amount": 2, "unit": "pcs", "unit_price": 9.99, "discount": 6.00, "refund": false},
-    {"name": "Punga", "amount": 1, "unit": "pcs", "unit_price": 0.81, "discount": 0, "refund": false}
+    {"name": "Banane", "amount": 1.016, "unit": "kg", "unit_price": 8.99, "discount": 0, "refund": false, "category": "Fruit"},
+    {"name": "Rosii cherry", "amount": 2, "unit": "pcs", "unit_price": 9.99, "discount": 6.00, "refund": false, "category": "Vegetable"},
+    {"name": "Punga", "amount": 1, "unit": "pcs", "unit_price": 0.81, "discount": 0, "refund": false, "category": null}
   ],
   "notes": []
 }
@@ -42,6 +42,7 @@ Rules:
 - store is the short shop or brand name, not the legal company name. Use a known store below when it is the same shop.
 - payment_type is one of the known payment types below, or null.
 - name: when the product is one of the known products below, use that exact name. Otherwise write a short readable name in the receipt's language, with normal capitalisation (not ALL CAPS) and obvious abbreviations written out.
+- category is one of the known categories below (exact name) that fits the product, or null when none fits.
 - If several photos show parts of one receipt, combine them and do not repeat lines that appear in more than one photo.
 - If something is unreadable, give your best reading or null, and say what is uncertain in "notes". Never invent products or prices.
 """.strip()
@@ -55,6 +56,7 @@ class ScannedItem:
     unit_price: Decimal
     discount: Decimal = Decimal(0)
     refund: bool = False
+    category: str | None = None
 
 
 @dataclass
@@ -74,31 +76,39 @@ class ScanParseError(ValueError):
 
 
 def merge_identical_items(items):
-    """Combine lines with the same name, unit, price and refund flag; returns (items, {name: lines combined})."""
+    """Combine whole-number lines with the same name, unit, price and refund flag; returns (items, {name: lines combined})."""
     merged, positions, counts = [], {}, {}
     for item in items:
         key = (item.name.casefold(), item.unit, item.unit_price, item.refund)
-        if key in positions:
+        # weighed lines stay separate: merging them could move the rounded total by a cent
+        whole = item.amount == item.amount.to_integral_value()
+        if whole and key in positions:
             target = merged[positions[key]]
             target.amount += item.amount
             target.discount += item.discount
             counts[target.name] = counts.get(target.name, 1) + 1
         else:
-            positions[key] = len(merged)
+            if whole:
+                positions[key] = len(merged)
             merged.append(replace(item))
     return merged, counts
 
 
-def build_prompt(stores, payment_types, products):
-    """products: (name, unit) pairs."""
+def build_prompt(stores, payment_types, products, categories=()):
+    """products: (name, unit) or (name, unit, category) tuples."""
+    def describe(product):
+        name, unit, *rest = product
+        return f"- {name} [{unit}, {rest[0] or 'no category'}]" if rest else f"- {name} [{unit}]"
+
     lines = [
         PROMPT,
         "",
         "Known stores: " + (", ".join(stores) or "none yet"),
         "Known payment types: " + (", ".join(payment_types) or "none"),
-        "Known products (unit in brackets):",
+        "Known categories: " + (", ".join(categories) or "none yet"),
+        "Known products (unit and category in brackets):",
     ]
-    lines += [f"- {name} [{unit}]" for name, unit in products] or ["- none yet"]
+    lines += [describe(p) for p in products] or ["- none yet"]
     return "\n".join(lines)
 
 
@@ -223,6 +233,7 @@ def parse_scan(text):
             unit_price=price,
             discount=abs(_number(raw.get("discount"), f"{label} discount", Decimal(0))),
             refund=refund,
+            category=_text(raw.get("category")),
         ))
 
     if not items:

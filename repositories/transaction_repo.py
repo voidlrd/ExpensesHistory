@@ -1,14 +1,21 @@
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 from database.engine import get_session
 from database.models import TransactionRecord, Item, Product
+from repositories.product_repo import get_or_create_category
 from repositories.reference_repo import find_counterparty, get_or_create_counterparty
 from units import normalize_unit
 
+CENT = Decimal("0.01")
+
 def line_total(amount, price, discount, refund):
-    total = (Decimal(str(amount)) * Decimal(str(price))) - Decimal(str(discount))
+    # receipts round every line to the cent
+    total = ((Decimal(str(amount)) * Decimal(str(price))) - Decimal(str(discount))).quantize(CENT, rounding=ROUND_HALF_UP)
     return -total if refund else total
+
+def normalize_receipt_number(number):
+    return "".join((number or "").split()).casefold()
 
 def _write_items(session, transaction, items_data):
     products = {p.name.casefold(): p for p in session.scalars(select(Product))}
@@ -17,17 +24,25 @@ def _write_items(session, transaction, items_data):
         product_name = item_data["product_name"]
         product = products.get(product_name.casefold())
         unit = item_data.get("unit")
+        category = item_data.get("category")
 
         if not product:
-            product = Product(name=product_name, unit_of_measure=normalize_unit(unit) if unit else None)
+            product = Product(
+                name=product_name,
+                unit_of_measure=normalize_unit(unit) if unit else None,
+                category_id=get_or_create_category(session, category).id if category else None,
+            )
             session.add(product)
             session.flush()
             products[product_name.casefold()] = product
-        elif unit and product.unit_of_measure != normalize_unit(unit):
-            product.unit_of_measure = normalize_unit(unit)
-            if product.unit_of_measure != "pcs":
-                product.package_size = None
-                product.package_unit = None
+        else:
+            if unit and product.unit_of_measure != normalize_unit(unit):
+                product.unit_of_measure = normalize_unit(unit)
+                if product.unit_of_measure != "pcs":
+                    product.package_size = None
+                    product.package_unit = None
+            if category and product.category_id is None:
+                product.category_id = get_or_create_category(session, category).id
 
         session.add(Item(
             transaction_id=transaction.id,
@@ -145,6 +160,21 @@ class TransactionRepository:
             if last_tx:
                 return last_tx.payment_type_id, last_tx.currency_code
             return None, None
+
+    @staticmethod
+    def find_by_receipt_number(receipt_number, exclude_id=None):
+        wanted = normalize_receipt_number(receipt_number)
+        if not wanted:
+            return []
+        with get_session() as session:
+            stmt = (
+                select(TransactionRecord)
+                .options(joinedload(TransactionRecord.counterparty))
+                .where(TransactionRecord.number.is_not(None))
+                .order_by(TransactionRecord.date)
+            )
+            return [t for t in session.scalars(stmt)
+                    if t.id != exclude_id and normalize_receipt_number(t.number) == wanted]
 
     @staticmethod
     def check_potential_duplicate(tx_date, counterparty_name, final_amount, currency_code=None, exclude_id=None):

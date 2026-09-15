@@ -15,7 +15,7 @@ class ProductOverview:
     last_price: float | None = None
     last_currency: str | None = None
 
-def _get_or_create_category(session, name):
+def get_or_create_category(session, name):
     folded = name.casefold()
     category = next((c for c in session.scalars(select(ItemCategory)) if c.name.casefold() == folded), None)
     if category is None:
@@ -75,7 +75,7 @@ class ProductRepository:
     @staticmethod
     def set_category(product_ids, category_name):
         with get_session() as session:
-            category_id = _get_or_create_category(session, category_name).id if category_name else None
+            category_id = get_or_create_category(session, category_name).id if category_name else None
             for p in session.scalars(select(Product).where(Product.id.in_(product_ids))):
                 p.category_id = category_id
             session.commit()
@@ -182,6 +182,6 @@ class ProductRepository:
                     p.package_size = None
                     p.package_unit = None
 
-                p.category_id = _get_or_create_category(session, category_name).id if category_name else None
+                p.category_id = get_or_create_category(session, category_name).id if category_name else None
 
                 session.commit()
