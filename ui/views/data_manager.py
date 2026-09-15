@@ -163,7 +163,24 @@ class DataManagerView(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to create backup:\n{str(e)}")
 
+    @staticmethod
+    def _selected_id(list_widget):
+        item = list_widget.currentItem()
+        return item.data(Qt.ItemDataRole.UserRole).id if item is not None else None
+
+    @staticmethod
+    def _select_by_id(list_widget, record_id):
+        if record_id is None:
+            return
+        for row in range(list_widget.count()):
+            if list_widget.item(row).data(Qt.ItemDataRole.UserRole).id == record_id:
+                list_widget.setCurrentRow(row)
+                return
+
     def load_data(self):
+        cp_id = self._selected_id(self.cp_list)
+        prod_id = self._selected_id(self.prod_list)
+
         self.cp_cat_input.clear()
         for cat in self.ref_repo.get_all_counterparty_categories():
             self.cp_cat_input.addItem(cat.name, userData=cat.id)
@@ -186,6 +203,9 @@ class DataManagerView(QWidget):
             item = QListWidgetItem(display_name)
             item.setData(Qt.ItemDataRole.UserRole, p)
             self.prod_list.addItem(item)
+
+        self._select_by_id(self.cp_list, cp_id)
+        self._select_by_id(self.prod_list, prod_id)
 
     def on_cp_selected(self, current, previous):
         if not current:
@@ -227,13 +247,9 @@ class DataManagerView(QWidget):
         item = self.cp_list.currentItem()
         if not item: return
 
-        current_row = self.cp_list.currentRow()
-
         cp = item.data(Qt.ItemDataRole.UserRole)
         self.ref_repo.set_hidden_status(cp.id, not cp.hidden)
         self.load_data()
-
-        self.cp_list.setCurrentRow(current_row)
 
     def load_locations(self, cp):
         self.loc_group.setEnabled(True)
@@ -326,10 +342,6 @@ class DataManagerView(QWidget):
         item = self.prod_list.currentItem()
         if not item: return
 
-        current_row = self.prod_list.currentRow()
-
         p = item.data(Qt.ItemDataRole.UserRole)
         self.product_repo.set_hidden_status(p.id, not p.hidden)
         self.load_data()
-
-        self.prod_list.setCurrentRow(current_row)
