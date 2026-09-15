@@ -1,4 +1,3 @@
-import unicodedata
 from decimal import Decimal
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, QGroupBox, QLineEdit, QComboBox,
@@ -8,6 +7,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QBrush, QColor
 from PyQt6.QtCore import Qt, QItemSelectionModel
 from repositories.product_repo import ProductRepository
+from repositories.names import fold_text
 from repositories.reference_repo import ReferenceRepository
 from ui.widgets import SortItem, TrimmedDoubleSpinBox, ask_yes_no, repopulate_combo
 from units import UNITS, PACKAGE_UNITS, describe_package, normalize_unit
@@ -21,11 +21,6 @@ COLUMNS = ["Name", "Brand", "Category", "Unit", "Package", "Bought", "Last Bough
 
 HIDDEN_COLOR = QColor("#9E9E9E")
 MISSING_COLOR = QColor("#FF9800")
-
-def _fold(text):
-    """Casefold and drop accents, so 'paine' matches 'Pâine'."""
-    decomposed = unicodedata.normalize("NFKD", text or "")
-    return "".join(c for c in decomposed if not unicodedata.combining(c)).casefold()
 
 class ProductsPanel(QWidget):
     def __init__(self):
@@ -184,8 +179,8 @@ class ProductsPanel(QWidget):
         if p.hidden and not self.show_hidden.isChecked():
             return False
 
-        search = _fold(self.search_input.text().strip())
-        if search and search not in _fold(p.name) and search not in _fold(p.brand):
+        search = fold_text(self.search_input.text().strip())
+        if search and search not in fold_text(p.name) and search not in fold_text(p.brand):
             return False
 
         category = self.category_filter.currentData()
@@ -218,10 +213,10 @@ class ProductsPanel(QWidget):
             unit = normalize_unit(p.unit_of_measure)
             package = describe_package(p.package_size, p.package_unit)
             cells = {
-                COL_NAME: SortItem(p.name, _fold(p.name)),
-                COL_BRAND: SortItem(p.brand or "", _fold(p.brand)),
+                COL_NAME: SortItem(p.name, fold_text(p.name)),
+                COL_BRAND: SortItem(p.brand or "", fold_text(p.brand)),
                 COL_CATEGORY: SortItem(p.category.name if p.category else "No category",
-                                       _fold(p.category.name) if p.category else ""),
+                                       fold_text(p.category.name) if p.category else ""),
                 COL_UNIT: SortItem(unit, unit),
                 COL_PACKAGE: SortItem(package, (p.package_unit or "", float(p.package_size or 0))),
                 COL_BOUGHT: SortItem(str(entry.purchases), entry.purchases, align_right=True),

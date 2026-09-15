@@ -3,12 +3,13 @@ from PyQt6.QtWidgets import (
     QLabel, QDialog, QDateEdit, QComboBox, QMessageBox, QFormLayout, QDoubleSpinBox
 )
 from PyQt6.QtGui import QBrush, QColor
-from PyQt6.QtCore import QDate, pyqtSignal
+from PyQt6.QtCore import QDate, Qt, pyqtSignal
+from decimal import Decimal
 from repositories.transaction_repo import TransactionRepository, line_total
 from repositories.reference_repo import ReferenceRepository
 from repositories.income_repo import IncomeRepository
 from ui.views.new_transaction import NewTransactionView
-from ui.widgets import ask_yes_no, format_amount, number_item
+from ui.widgets import SortItem, ask_yes_no, format_amount, number_item
 from units import describe_package, normalize_unit
 
 class TransactionEditDialog(QDialog):
@@ -217,3 +218,95 @@ class TransactionDetailDialog(QDialog):
             TransactionRepository.delete_transaction(self.tx_id)
             self.transaction_deleted.emit()
             self.accept()
+
+
+class MonthLinesDialog(QDialog):
+    """Receipt lines behind a dashboard row; double-click opens the receipt."""
+    receipts_changed = pyqtSignal()
+
+    COLUMNS = ["Date", "Store", "Product", "Amount", "Price", "Discount", "Total"]
+
+    def __init__(self, title, currency_code, loader, parent=None):
+        super().__init__(parent)
+        self.currency_code = currency_code
+        self.loader = loader
+
+        self.setWindowTitle(title)
+        self.resize(820, 480)
+
+        layout = QVBoxLayout(self)
+        self.table = QTableWidget(0, len(self.COLUMNS))
+        self.table.setHorizontalHeaderLabels(self.COLUMNS)
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.setAlternatingRowColors(True)
+        self.table.verticalHeader().setVisible(False)
+        header = self.table.horizontalHeader()
+        for col in range(len(self.COLUMNS)):
+            header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.table.itemDoubleClicked.connect(lambda item: self.open_receipt(item.row()))
+        layout.addWidget(self.table)
+
+        footer = QHBoxLayout()
+        self.summary_label = QLabel()
+        self.summary_label.setStyleSheet("font-weight: bold;")
+        hint = QLabel("Double-click a line to open its receipt.")
+        hint.setStyleSheet("color: #9E9E9E;")
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        footer.addWidget(self.summary_label)
+        footer.addSpacing(15)
+        footer.addWidget(hint)
+        footer.addStretch()
+        footer.addWidget(close_btn)
+        layout.addLayout(footer)
+
+        self.load()
+
+    def load(self):
+        lines = self.loader()
+        total = Decimal(0)
+
+        self.table.setSortingEnabled(False)
+        self.table.setRowCount(0)
+        for row, item in enumerate(lines):
+            self.table.insertRow(row)
+            tx = item.transaction
+            product = item.product
+            unit = normalize_unit(product.unit_of_measure) if product else ""
+            name = product.name if product else "Unknown"
+            if item.item_name_override:
+                name = f"{item.item_name_override} ({name})"
+            row_total = line_total(item.amount, item.price, item.discount, item.refund)
+            total += row_total
+
+            date_item = SortItem(str(tx.date))
+            date_item.setData(Qt.ItemDataRole.UserRole, tx.id)
+            self.table.setItem(row, 0, date_item)
+            self.table.setItem(row, 1, QTableWidgetItem(tx.counterparty.name if tx.counterparty else "Unknown"))
+            self.table.setItem(row, 2, QTableWidgetItem(name))
+            self.table.setItem(row, 3, number_item(item.amount, f"{format_amount(item.amount)} {unit}".strip()))
+            self.table.setItem(row, 4, number_item(item.price))
+            self.table.setItem(row, 5, number_item(item.discount))
+            self.table.setItem(row, 6, number_item(row_total))
+        self.table.setSortingEnabled(True)
+
+        count = len(lines)
+        self.summary_label.setText(f"{count} line{'s' if count != 1 else ''} · {total:,.2f} {self.currency_code}")
+
+    def open_receipt(self, row):
+        date_item = self.table.item(row, 0)
+        if date_item is None:
+            return
+        tx = TransactionRepository.get_transaction_with_items(date_item.data(Qt.ItemDataRole.UserRole))
+        if tx is None:
+            return
+        dialog = TransactionDetailDialog(tx, self)
+        dialog.transaction_deleted.connect(self._receipts_changed)
+        dialog.transaction_changed.connect(self._receipts_changed)
+        dialog.exec()
+
+    def _receipts_changed(self):
+        self.load()
+        self.receipts_changed.emit()

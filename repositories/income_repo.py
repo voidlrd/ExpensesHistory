@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 from database.engine import get_session
 from database.models import IncomeRecord
+from repositories.names import fold_text
 from repositories.reference_repo import get_or_create_counterparty
 
 class IncomeRepository:
@@ -40,6 +41,14 @@ class IncomeRepository:
 
             stmt = stmt.order_by(IncomeRecord.date.desc())
             return session.scalars(stmt).unique().all()
+
+    @staticmethod
+    def search_incomes(start_date=None, end_date=None, counterparty_id=None, currency_code=None, text=""):
+        incomes = IncomeRepository.get_all_incomes(start_date, end_date, counterparty_id, currency_code)
+        wanted = fold_text((text or "").strip())
+        if not wanted:
+            return incomes
+        return [inc for inc in incomes if inc.counterparty and wanted in fold_text(inc.counterparty.name)]
 
     @staticmethod
     def get_income(income_id):

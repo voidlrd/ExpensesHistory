@@ -9,7 +9,8 @@ SQLAlchemy on top of a local SQLite database.
 - Per-product units (pcs / kg / l) with an optional package size, so prices compare per kg or litre
 - Track income alongside expenses, in multiple currencies
 - Edit or delete any saved transaction or income record
-- Per-month dashboard: income, expenses, net balance, and breakdowns by store and category
+- History: period presets, live filters, search by store, receipt ID or product, and totals for what's shown
+- Dashboard: step through months, see income and expenses against the previous month and over the last 12 months, and open any store or category to see what you bought
 - Price tracker: effective unit price history per product, per currency, with a chart
 - Manage stores and their locations
 - Products tab: search and filter by category, brand and unit; set categories in bulk, hide, merge duplicates, and delete products that were never bought

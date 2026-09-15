@@ -4,6 +4,7 @@ from sqlalchemy.orm import joinedload
 from database.engine import get_session
 from database.models import TransactionRecord, Item, Product
 from repositories.product_repo import get_or_create_category
+from repositories.names import fold_text
 from repositories.reference_repo import find_counterparty, get_or_create_counterparty
 from units import normalize_unit
 
@@ -131,6 +132,43 @@ class TransactionRepository:
 
             stmt = stmt.order_by(TransactionRecord.date.desc())
             return session.scalars(stmt).unique().all()
+
+    @staticmethod
+    def search_transactions(start_date=None, end_date=None, counterparty_id=None, currency_code=None, text=""):
+        """Filtered receipts, newest first; text matches store, location, receipt ID or any product on it."""
+        with get_session() as session:
+            stmt = (
+                select(TransactionRecord)
+                .options(
+                    joinedload(TransactionRecord.counterparty),
+                    joinedload(TransactionRecord.payment_type),
+                    joinedload(TransactionRecord.location),
+                    joinedload(TransactionRecord.items).joinedload(Item.product)
+                )
+                .order_by(TransactionRecord.date.desc(), TransactionRecord.id.desc())
+            )
+            if start_date:
+                stmt = stmt.where(TransactionRecord.date >= start_date)
+            if end_date:
+                stmt = stmt.where(TransactionRecord.date <= end_date)
+            if counterparty_id:
+                stmt = stmt.where(TransactionRecord.counterparty_id == counterparty_id)
+            if currency_code:
+                stmt = stmt.where(TransactionRecord.currency_code == currency_code)
+            transactions = session.scalars(stmt).unique().all()
+
+        wanted = fold_text((text or "").strip())
+        if not wanted:
+            return transactions
+
+        def haystack(tx):
+            parts = [tx.number, tx.counterparty.name if tx.counterparty else None,
+                     tx.location.label if tx.location else None]
+            for item in tx.items:
+                parts += [item.product.name if item.product else None, item.item_name_override]
+            return fold_text(" ".join(p for p in parts if p))
+
+        return [tx for tx in transactions if wanted in haystack(tx)]
 
     @staticmethod
     def get_transaction_with_items(tx_id: int):

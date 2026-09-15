@@ -24,7 +24,7 @@ class MainWindow(QMainWindow):
 
         # (widget, title, refresh callback run when the tab is opened)
         self.pages = [
-            (self.dashboard_tab, "Dashboard", self.dashboard_tab.load_currencies),
+            (self.dashboard_tab, "Dashboard", self.dashboard_tab.refresh),
             (self.new_transaction_tab, "New Transaction", self.new_transaction_tab.load_reference_data),
             (self.new_income_tab, "New Income", self.new_income_tab.load_reference_data),
             (self.history_tab, "History", self._refresh_history),
