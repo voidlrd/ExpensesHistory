@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLineEdit, QComboBox, QDateEdit, QPushButton,
     QTableWidget, QHeaderView, QLabel, QDoubleSpinBox,
-    QMessageBox, QCompleter, QCheckBox
+    QMessageBox, QCompleter, QCheckBox, QApplication
 )
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtCore import QDate, Qt, QTimer, pyqtSignal
@@ -12,6 +12,8 @@ from repositories.product_repo import ProductRepository
 from repositories.transaction_repo import TransactionRepository, line_total
 from ui.widgets import TrimmedDoubleSpinBox, repopulate_combo
 from units import UNITS, normalize_unit
+from receipt_import import build_prompt
+from ui.views.scan_dialog import ScanPasteDialog
 
 (COL_PRODUCT, COL_OVERRIDE, COL_AMOUNT, COL_UNIT, COL_PRICE,
  COL_DISCOUNT, COL_REFUND, COL_TOTAL, COL_DELETE) = range(9)
@@ -60,6 +62,18 @@ class NewTransactionView(QWidget):
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
+
+        if not self.edit_tx_id:
+            scan_layout = QHBoxLayout()
+            scan_layout.addWidget(QLabel("Scan a receipt with AI (Claude, Gemini, ...):"))
+            self.copy_prompt_btn = QPushButton("1. Copy Prompt")
+            self.copy_prompt_btn.clicked.connect(self.copy_scan_prompt)
+            self.paste_scan_btn = QPushButton("2. Paste AI Result")
+            self.paste_scan_btn.clicked.connect(self.paste_scan_result)
+            scan_layout.addWidget(self.copy_prompt_btn)
+            scan_layout.addWidget(self.paste_scan_btn)
+            scan_layout.addStretch()
+            layout.addLayout(scan_layout)
 
         form_layout = QFormLayout()
 
@@ -112,6 +126,11 @@ class NewTransactionView(QWidget):
 
         self.items_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         layout.addWidget(self.items_table)
+
+        self.scan_summary = QLabel()
+        self.scan_summary.setWordWrap(True)
+        self.scan_summary.setVisible(False)
+        layout.addWidget(self.scan_summary)
 
         self.add_item_btn = QPushButton("Add Item Row")
         self.add_item_btn.clicked.connect(self.add_empty_row)
@@ -515,8 +534,121 @@ class NewTransactionView(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save transaction:\n{str(e)}")
 
+    def _show_scan_message(self, text, kind="info"):
+        color = {"info": "#2196F3", "ok": "#4CAF50", "warn": "#F44336"}[kind]
+        self.scan_summary.setStyleSheet(f"border: 1px solid {color}; border-radius: 4px; padding: 6px;")
+        self.scan_summary.setText(text)
+        self.scan_summary.setVisible(True)
+
+    def copy_scan_prompt(self):
+        stores = [cp.name for cp in self.ref_repo.get_all_counterparties()]
+        payment_types = [self.payment_type_input.itemText(i) for i in range(self.payment_type_input.count())]
+        products = [(p.name, normalize_unit(p.unit_of_measure)) for p in self.products]
+        QApplication.clipboard().setText(build_prompt(stores, payment_types, products))
+        self._show_scan_message(
+            "Prompt copied. In Claude or Gemini, attach the receipt photo (or several for a long receipt), "
+            "paste the prompt and send it. Then copy the whole reply and click \"2. Paste AI Result\"."
+        )
+
+    def paste_scan_result(self):
+        dialog = ScanPasteDialog(self)
+        if dialog.exec() and dialog.scan is not None:
+            self.apply_scan(dialog.scan)
+
+    def _has_items(self):
+        for row in range(self.items_table.rowCount()):
+            product_cb = self._cell(row, COL_PRODUCT)
+            if product_cb is not None and product_cb.currentText().strip():
+                return True
+        return False
+
+    def apply_scan(self, scan):
+        if self._has_items():
+            reply = QMessageBox.question(
+                self, "Replace Items?",
+                "The form already has items. Replace them with the scanned receipt?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+        notes = list(scan.notes)
+
+        if scan.date:
+            self.date_input.setDate(QDate(scan.date.year, scan.date.month, scan.date.day))
+        if scan.store:
+            stores = {self.counterparty_input.itemText(i).casefold(): self.counterparty_input.itemText(i)
+                      for i in range(self.counterparty_input.count())}
+            self.counterparty_input.setCurrentText(stores.get(scan.store.casefold(), scan.store))
+        self.receipt_number_input.setText(scan.receipt_number or "")
+        if scan.currency:
+            idx = self.currency_input.findData(scan.currency)
+            if idx >= 0:
+                self.currency_input.setCurrentIndex(idx)
+            else:
+                notes.append(f"The receipt is in {scan.currency}, which isn't set up in the app. Check the currency.")
+        if scan.payment_type:
+            for i in range(self.payment_type_input.count()):
+                if self.payment_type_input.itemText(i).casefold() == scan.payment_type.casefold():
+                    self.payment_type_input.setCurrentIndex(i)
+                    break
+
+        known_names = {p.name.casefold(): p.name for p in self.products}
+        new_products = []
+        self.items_table.setRowCount(0)
+        for item in scan.items:
+            self.add_empty_row()
+            row = self.items_table.rowCount() - 1
+
+            name = known_names.get(item.name.casefold(), item.name)
+            if name.casefold() not in known_names and name not in new_products:
+                new_products.append(name)
+            self._cell(row, COL_PRODUCT).setCurrentText(name)
+
+            amount = float(item.amount)
+            unit = self.product_units.get(name.casefold()) or item.unit
+            if unit == "pcs" and item.unit != "pcs" and not amount.is_integer():
+                unit = item.unit
+                notes.append(f"{name} was weighed ({amount:g} {unit}), so saving will change its unit to {unit}.")
+            self._cell(row, COL_UNIT).setCurrentText(unit)
+            self._set_amount_mode(self._cell(row, COL_AMOUNT), unit, allow_fraction=not amount.is_integer())
+            self._cell(row, COL_AMOUNT).setValue(amount)
+            self._cell(row, COL_PRICE).setValue(float(item.unit_price))
+            self._cell(row, COL_DISCOUNT).setValue(float(item.discount))
+            self._cell(row, COL_REFUND).refund_cb.setChecked(item.refund)
+
+        self.calculate_totals()
+
+        # receipts round every line to cents, so compare the same way
+        cent = Decimal("0.01")
+        items_total = sum(
+            (line_total(i.amount, i.unit_price, i.discount, i.refund).quantize(cent, rounding="ROUND_HALF_UP")
+             for i in scan.items),
+            Decimal(0)
+        )
+        count = len(scan.items)
+        kind = "info"
+        if scan.total is None:
+            lines = [f"Filled {count} items. The receipt total couldn't be read, so check the items against the receipt."]
+        elif items_total == scan.total.quantize(cent, rounding="ROUND_HALF_UP"):
+            kind = "ok"
+            lines = [f"\u2713 Filled {count} items. They add up to {items_total:.2f}, the same as the receipt total."]
+        else:
+            kind = "warn"
+            lines = [
+                f"\u26a0 Filled {count} items, but they add up to {items_total:.2f} while the receipt total is "
+                f"{scan.total:.2f} (difference {items_total - scan.total:+.2f}). "
+                "Check the items against the receipt before saving."
+            ]
+        if new_products:
+            lines.append("New products that will be created: " + ", ".join(new_products))
+        lines += [f"\u2022 {note}" for note in notes]
+        self._show_scan_message("\n".join(lines), kind)
+
     def reset_form(self):
         self.receipt_number_input.clear()
+        self.scan_summary.setVisible(False)
         self.items_table.setRowCount(0)
         self.date_input.setDate(QDate.currentDate())
 

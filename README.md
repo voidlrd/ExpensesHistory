@@ -13,6 +13,20 @@ SQLAlchemy on top of a local SQLite database.
 - Price tracker: effective unit price history per product, per currency, with a chart
 - Manage stores, their locations, and the product catalogue
 - One-click database backup
+- Fill a receipt from a photo using any AI chat app (Claude, Gemini, ...), then review and save
+
+## Scanning a receipt with AI
+
+1. On **New Transaction**, click **1. Copy Prompt**. The prompt includes your known
+   stores, payment types and products, so the AI reuses your names.
+2. In Claude, Gemini or another AI chat, attach the receipt photo (several photos for a
+   long receipt), paste the prompt and send it.
+3. Copy the whole reply, click **2. Paste AI Result** and then **Fill Form**.
+4. Check the message under the items: it confirms the items add up to the receipt
+   total, or shows the difference, and lists new products and anything the AI was
+   unsure about. Nothing is saved until you press Save.
+
+The app never contacts an AI service itself; it only reads the pasted JSON.
 
 ## Running
 
@@ -36,6 +50,7 @@ The result lands in `dist/ExpenseTracker.exe`. It reads and writes
 main.py             entry point: logging, database init, main window
 app_logging.py      rotating file log + excepthook so crashes are recorded
 units.py            unit normalisation and price-per-kg/l maths
+receipt_import.py   AI scan prompt and the parser for the pasted result
 database/
   models.py         SQLAlchemy models
   engine.py         engine, session factory, seed data
