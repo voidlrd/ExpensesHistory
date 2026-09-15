@@ -96,7 +96,8 @@ class DataManagerView(QWidget):
         self.prod_package_size = QDoubleSpinBox()
         self.prod_package_size.setRange(0, 99999.999)
         self.prod_package_size.setDecimals(3)
-        self.prod_package_size.setSpecialValueText("none")
+        # a space shows the field blank at 0 (no package size); "" would disable it
+        self.prod_package_size.setSpecialValueText(" ")
         self.prod_package_unit = QComboBox()
         self.prod_package_unit.addItems(PACKAGE_UNITS)
         package_layout = QHBoxLayout()
@@ -294,8 +295,7 @@ class DataManagerView(QWidget):
         self.prod_brand_input.setText(p.brand or "")
         self.prod_unit_input.setCurrentText(normalize_unit(p.unit_of_measure))
         self.prod_package_size.setValue(float(p.package_size or 0))
-        if p.package_unit:
-            self.prod_package_unit.setCurrentText(p.package_unit)
+        self.prod_package_unit.setCurrentText(p.package_unit or PACKAGE_UNITS[0])
         self._update_package_enabled()
         self.prod_hide_btn.setText("Unhide" if p.hidden else "Hide/Archive")
 
