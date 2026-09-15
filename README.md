@@ -11,7 +11,8 @@ SQLAlchemy on top of a local SQLite database.
 - Edit or delete any saved transaction or income record
 - Per-month dashboard: income, expenses, net balance, and breakdowns by store and category
 - Price tracker: effective unit price history per product, per currency, with a chart
-- Manage stores, their locations, and the product catalogue
+- Manage stores and their locations
+- Products tab: search and filter by category, brand and unit; set categories in bulk, hide, merge duplicates, and delete products that were never bought
 - One-click database backup
 - Fill a receipt from a photo using any AI chat app (Claude, Gemini, ...), then review and save
 

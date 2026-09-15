@@ -8,18 +8,14 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from sqlalchemy.exc import IntegrityError
 from repositories.reference_repo import ReferenceRepository
-from repositories.product_repo import ProductRepository
 from database.engine import BASE_DIR, DB_PATH
-from decimal import Decimal
-from units import UNITS, PACKAGE_UNITS, normalize_unit
-from ui.widgets import TrimmedDoubleSpinBox
+from ui.views.products_panel import ProductsPanel
 from datetime import datetime
 
 class DataManagerView(QWidget):
     def __init__(self):
         super().__init__()
         self.ref_repo = ReferenceRepository()
-        self.product_repo = ProductRepository()
         self.setup_ui()
         self.load_data()
 
@@ -79,56 +75,8 @@ class DataManagerView(QWidget):
         cp_layout.addLayout(cp_right_panel, 1)
         self.tabs.addTab(self.cp_tab, "Stores & People")
 
-        self.prod_tab = QWidget()
-        prod_layout = QHBoxLayout(self.prod_tab)
-        self.prod_list = QListWidget()
-        self.prod_list.currentItemChanged.connect(self.on_prod_selected)
-        prod_layout.addWidget(self.prod_list, 1)
-
-        prod_form_group = QGroupBox("Edit Product")
-        prod_form_layout = QFormLayout(prod_form_group)
-        self.prod_name_input = QLineEdit()
-        self.prod_brand_input = QLineEdit()
-        self.prod_unit_input = QComboBox()
-        self.prod_unit_input.addItems(UNITS)
-        self.prod_unit_input.setToolTip("What the Amount on a receipt counts")
-        self.prod_unit_input.currentTextChanged.connect(self._update_package_enabled)
-
-        self.prod_package_size = TrimmedDoubleSpinBox()
-        self.prod_package_size.setRange(0, 99999.999)
-        self.prod_package_size.setDecimals(3)
-        # a space shows the field blank at 0 (no package size); "" would disable it
-        self.prod_package_size.setSpecialValueText(" ")
-        self.prod_package_unit = QComboBox()
-        self.prod_package_unit.addItems(PACKAGE_UNITS)
-        package_layout = QHBoxLayout()
-        package_layout.addWidget(self.prod_package_size)
-        package_layout.addWidget(self.prod_package_unit)
-
-        self.prod_cat_input = QComboBox()
-        self.prod_cat_input.setEditable(True)
-        self.prod_cat_input.setPlaceholderText("Select or type new category...")
-
-        prod_btn_layout = QHBoxLayout()
-        self.prod_save_btn = QPushButton("Save Changes")
-        self.prod_save_btn.setStyleSheet("background-color: #4CAF50; color: white;")
-        self.prod_save_btn.clicked.connect(self.save_prod_changes)
-
-        self.prod_hide_btn = QPushButton("Hide/Archive")
-        self.prod_hide_btn.clicked.connect(self.toggle_hide_prod)
-
-        prod_btn_layout.addWidget(self.prod_hide_btn)
-        prod_btn_layout.addWidget(self.prod_save_btn)
-
-        prod_form_layout.addRow("Name:", self.prod_name_input)
-        prod_form_layout.addRow("Brand:", self.prod_brand_input)
-        prod_form_layout.addRow("Category:", self.prod_cat_input)
-        prod_form_layout.addRow("Unit:", self.prod_unit_input)
-        prod_form_layout.addRow("Package size:", package_layout)
-        prod_form_layout.addRow("", prod_btn_layout)
-
-        prod_layout.addWidget(prod_form_group, 1)
-        self.tabs.addTab(self.prod_tab, "Products")
+        self.products_panel = ProductsPanel()
+        self.tabs.addTab(self.products_panel, "Products")
 
         self.backup_tab = QWidget()
         backup_layout = QVBoxLayout(self.backup_tab)
@@ -181,7 +129,6 @@ class DataManagerView(QWidget):
 
     def load_data(self):
         cp_id = self._selected_id(self.cp_list)
-        prod_id = self._selected_id(self.prod_list)
 
         self.cp_cat_input.clear()
         for cat in self.ref_repo.get_all_counterparty_categories():
@@ -194,26 +141,14 @@ class DataManagerView(QWidget):
             item.setData(Qt.ItemDataRole.UserRole, cp)
             self.cp_list.addItem(item)
 
-        self.prod_cat_input.clear()
-        self.prod_cat_input.addItem("", userData=None)
-        for item_cat in self.ref_repo.get_all_item_categories():
-            self.prod_cat_input.addItem(item_cat.name, userData=item_cat.id)
-
-        self.prod_list.clear()
-        for p in self.product_repo.get_all_products(include_hidden=True):
-            display_name = f"🚫 {p.name}" if p.hidden else p.name
-            item = QListWidgetItem(display_name)
-            item.setData(Qt.ItemDataRole.UserRole, p)
-            self.prod_list.addItem(item)
-
         self._select_by_id(self.cp_list, cp_id)
-        self._select_by_id(self.prod_list, prod_id)
+        self.products_panel.load_data()
 
     def on_cp_selected(self, current, previous):
         if not current:
             self.loc_group.setEnabled(False)
             return
-        
+
         cp = current.data(Qt.ItemDataRole.UserRole)
         self.cp_name_input.setText(cp.name)
         self.cp_hide_btn.setText("Unhide" if cp.hidden else "Hide/Archive")
@@ -288,61 +223,3 @@ class DataManagerView(QWidget):
             self.load_locations(cp_item.data(Qt.ItemDataRole.UserRole))
         except ValueError as e:
             QMessageBox.warning(self, "Action Denied", str(e))
-
-    def on_prod_selected(self, current, previous):
-        if not current: return
-        p = current.data(Qt.ItemDataRole.UserRole)
-        self.prod_name_input.setText(p.name)
-        self.prod_brand_input.setText(p.brand or "")
-        self.prod_unit_input.setCurrentText(normalize_unit(p.unit_of_measure))
-        self.prod_package_size.setValue(float(p.package_size or 0))
-        self.prod_package_unit.setCurrentText(p.package_unit or PACKAGE_UNITS[0])
-        self._update_package_enabled()
-        self.prod_hide_btn.setText("Unhide" if p.hidden else "Hide/Archive")
-
-        if p.category_id:
-            idx = self.prod_cat_input.findData(p.category_id)
-            if idx >= 0:
-                self.prod_cat_input.setCurrentIndex(idx)
-        else:
-            self.prod_cat_input.setCurrentIndex(0)
-
-    def _update_package_enabled(self, *args):
-        counted = self.prod_unit_input.currentText() == "pcs"
-        self.prod_package_size.setEnabled(counted)
-        self.prod_package_unit.setEnabled(counted)
-
-    def save_prod_changes(self):
-        item = self.prod_list.currentItem()
-        if not item: return
-
-        p = item.data(Qt.ItemDataRole.UserRole)
-        new_name = self.prod_name_input.text().strip()
-        brand = self.prod_brand_input.text().strip()
-        unit = self.prod_unit_input.currentText()
-        size = self.prod_package_size.value()
-        package_size = Decimal(f"{size:.3f}") if size > 0 else None
-        package_unit = self.prod_package_unit.currentText() if package_size else None
-        cat_name = self.prod_cat_input.currentText().strip()
-
-        if not new_name:
-            QMessageBox.warning(self, "Error", "Product name cannot be empty.")
-            return
-
-        try:
-            self.product_repo.update_product(p.id, new_name, brand, unit, cat_name,
-                                             package_size, package_unit)
-        except ValueError as e:
-            QMessageBox.warning(self, "Error", str(e))
-            return
-
-        QMessageBox.information(self, "Success", "Product updated successfully.")
-        self.load_data()
-
-    def toggle_hide_prod(self):
-        item = self.prod_list.currentItem()
-        if not item: return
-
-        p = item.data(Qt.ItemDataRole.UserRole)
-        self.product_repo.set_hidden_status(p.id, not p.hidden)
-        self.load_data()
