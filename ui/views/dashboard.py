@@ -2,10 +2,9 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QHBoxLayout,
     QComboBox, QTableWidget, QTableWidgetItem, QHeaderView
 )
-from PyQt6.QtCore import Qt
 from repositories.reports_repo import ReportsRepository
 from repositories.reference_repo import ReferenceRepository
-from ui.widgets import make_stat_card, repopulate_combo
+from ui.widgets import SortItem, make_stat_card, repopulate_combo
 from datetime import date
 import calendar
 
@@ -115,15 +114,11 @@ class DashboardView(QWidget):
             self.breakdown_table.insertRow(row_idx)
             self.breakdown_table.setItem(row_idx, 0, QTableWidgetItem(store_name))
 
-            amount_item = QTableWidgetItem(f"{total_spent:,.2f} {currency}")
-            amount_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            self.breakdown_table.setItem(row_idx, 1, amount_item)
+            self.breakdown_table.setItem(row_idx, 1, SortItem(f"{total_spent:,.2f} {currency}", align_right=True))
 
         cat_data = self.reports_repo.get_expenses_by_category(currency, year, month)
         self.cat_breakdown_table.setRowCount(0)
         for row_idx, (cat_name, total_spent) in enumerate(cat_data):
             self.cat_breakdown_table.insertRow(row_idx)
             self.cat_breakdown_table.setItem(row_idx, 0, QTableWidgetItem(cat_name))
-            amount_item = QTableWidgetItem(f"{total_spent:,.2f} {currency}")
-            amount_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            self.cat_breakdown_table.setItem(row_idx, 1, amount_item)
+            self.cat_breakdown_table.setItem(row_idx, 1, SortItem(f"{total_spent:,.2f} {currency}", align_right=True))

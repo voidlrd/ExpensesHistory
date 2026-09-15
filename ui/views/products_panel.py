@@ -2,14 +2,14 @@ import unicodedata
 from decimal import Decimal
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, QGroupBox, QLineEdit, QComboBox,
-    QCheckBox, QLabel, QPushButton, QTableWidget, QTableWidgetItem, QHeaderView,
+    QCheckBox, QLabel, QPushButton, QTableWidget, QHeaderView,
     QAbstractItemView, QMessageBox, QInputDialog, QCompleter
 )
 from PyQt6.QtGui import QBrush, QColor
 from PyQt6.QtCore import Qt, QItemSelectionModel
 from repositories.product_repo import ProductRepository
 from repositories.reference_repo import ReferenceRepository
-from ui.widgets import TrimmedDoubleSpinBox, repopulate_combo
+from ui.widgets import SortItem, TrimmedDoubleSpinBox, ask_yes_no, repopulate_combo
 from units import UNITS, PACKAGE_UNITS, describe_package, normalize_unit
 
 FILTER_ALL = "__all__"
@@ -26,16 +26,6 @@ def _fold(text):
     """Casefold and drop accents, so 'paine' matches 'Pâine'."""
     decomposed = unicodedata.normalize("NFKD", text or "")
     return "".join(c for c in decomposed if not unicodedata.combining(c)).casefold()
-
-class SortItem(QTableWidgetItem):
-    def __init__(self, text, sort_value):
-        super().__init__(text)
-        self.sort_value = sort_value
-
-    def __lt__(self, other):
-        if isinstance(other, SortItem):
-            return self.sort_value < other.sort_value
-        return super().__lt__(other)
 
 class ProductsPanel(QWidget):
     def __init__(self):
@@ -234,16 +224,14 @@ class ProductsPanel(QWidget):
                                        _fold(p.category.name) if p.category else ""),
                 COL_UNIT: SortItem(unit, unit),
                 COL_PACKAGE: SortItem(package, (p.package_unit or "", float(p.package_size or 0))),
-                COL_BOUGHT: SortItem(str(entry.purchases), entry.purchases),
+                COL_BOUGHT: SortItem(str(entry.purchases), entry.purchases, align_right=True),
                 COL_LAST_BOUGHT: SortItem(str(entry.last_date) if entry.last_date else "Never",
                                           str(entry.last_date or "")),
                 COL_LAST_PRICE: SortItem(
                     f"{entry.last_price:.2f} {entry.last_currency} / {unit}" if entry.last_price is not None else "",
-                    entry.last_price if entry.last_price is not None else -1.0),
+                    entry.last_price if entry.last_price is not None else -1.0, align_right=True),
             }
             cells[COL_NAME].setData(Qt.ItemDataRole.UserRole, p.id)
-            for col in (COL_BOUGHT, COL_LAST_PRICE):
-                cells[col].setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             if not p.category:
                 cells[COL_CATEGORY].setForeground(QBrush(MISSING_COLOR))
             if p.hidden:
@@ -359,12 +347,8 @@ class ProductsPanel(QWidget):
             return
         name = self.bulk_category.currentText().strip()
         if not name:
-            reply = QMessageBox.question(
-                self, "Remove Category?",
-                f"No category is chosen. Remove the category from {len(ids)} product(s)?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No
-            )
-            if reply != QMessageBox.StandardButton.Yes:
+            if not ask_yes_no(self, "Remove Category?",
+                              f"No category is chosen. Remove the category from {len(ids)} product(s)?"):
                 return
         self.product_repo.set_category(ids, name or None)
         self.load_data()
@@ -399,14 +383,12 @@ class ProductsPanel(QWidget):
         if len(units) > 1:
             unit_warning = (f"\n\nThese products use different units ({', '.join(units)}). "
                             f"All their purchases will count as {normalize_unit(keep.product.unit_of_measure)}.")
-        reply = QMessageBox.question(
+        if not ask_yes_no(
             self, "Merge Products",
             f"Merge {', '.join(e.product.name for e in others)} into {keep.product.name}?\n\n"
             f"Their purchases move to {keep.product.name} and they are deleted. "
-            f"Receipts and totals don't change.{unit_warning}",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No
-        )
-        if reply != QMessageBox.StandardButton.Yes:
+            f"Receipts and totals don't change.{unit_warning}"
+        ):
             return
 
         try:
@@ -422,12 +404,8 @@ class ProductsPanel(QWidget):
         if not entries:
             return
         names = ", ".join(e.product.name for e in entries)
-        reply = QMessageBox.question(
-            self, "Delete Products",
-            f"Delete {names}?\n\nOnly products that were never bought can be deleted.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No
-        )
-        if reply != QMessageBox.StandardButton.Yes:
+        if not ask_yes_no(self, "Delete Products",
+                          f"Delete {names}?\n\nOnly products that were never bought can be deleted."):
             return
         try:
             self.product_repo.delete_unused_products([e.product.id for e in entries])

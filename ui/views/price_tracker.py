@@ -3,10 +3,9 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QComboBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QLabel
 )
-from PyQt6.QtCore import Qt
 from repositories.product_repo import ProductRepository
-from ui.widgets import format_amount, make_stat_card, repopulate_combo
-from units import describe_package, normalize_unit, price_per_base
+from ui.widgets import SortItem, format_amount, make_stat_card, repopulate_combo
+from units import describe_package, normalize_unit, price_per_base, unit_price_after_discount
 from datetime import datetime
 
 class TimeAxisItem(pg.AxisItem):
@@ -127,13 +126,6 @@ class PriceTrackerView(QWidget):
         self.populate_table_and_stats(items)
 
     @staticmethod
-    def _effective_price(item):
-        amount = float(item.amount)
-        if amount <= 0:
-            return float(item.price)
-        return float((item.amount * item.price) - item.discount) / amount
-
-    @staticmethod
     def _comparable_price(item, eff_price):
         product = item.product
         per_base = price_per_base(eff_price, product.unit_of_measure,
@@ -156,7 +148,7 @@ class PriceTrackerView(QWidget):
         # items arrive newest-first
         entries = []
         for item in items:
-            eff_price = self._effective_price(item)
+            eff_price = unit_price_after_discount(item.amount, item.price, item.discount)
             entries.append((item, eff_price) + self._comparable_price(item, eff_price))
 
         for row_idx, (item, eff_price, price, basis) in enumerate(entries):
@@ -201,9 +193,7 @@ class PriceTrackerView(QWidget):
         self._update_card(self.highest_price_label, highest)
 
     def _set_right(self, row, col, text):
-        cell = QTableWidgetItem(text)
-        cell.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.table.setItem(row, col, cell)
+        self.table.setItem(row, col, SortItem(text, align_right=True))
 
     def _update_card(self, card_dict, entry):
         item, _, price, basis = entry

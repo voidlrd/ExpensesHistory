@@ -26,6 +26,14 @@ def describe_package(package_size, package_unit):
     return f"{Decimal(str(package_size)).normalize():f} {package_unit}"
 
 
+def unit_price_after_discount(amount, price, discount):
+    """What one unit really cost once the line's discount is spread over the amount."""
+    amount = Decimal(str(amount))
+    if amount <= 0:
+        return float(price)
+    return float((amount * Decimal(str(price)) - Decimal(str(discount))) / amount)
+
+
 def price_per_base(unit_price, unit, package_size=None, package_unit=None):
     """Price per kg or l, or None when the product is counted without a known size."""
     unit = normalize_unit(unit)

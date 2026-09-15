@@ -1,6 +1,35 @@
-from PyQt6.QtWidgets import QDoubleSpinBox, QFrame, QLabel, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import (
+    QDoubleSpinBox, QFrame, QLabel, QMessageBox, QTableWidgetItem, QVBoxLayout, QWidget
+)
 from PyQt6.QtGui import QColor, QPainter, QPen
 from PyQt6.QtCore import QEvent, Qt
+
+
+def ask_yes_no(parent, title, text):
+    """Yes/No confirmation that defaults to No."""
+    buttons = QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+    reply = QMessageBox.question(parent, title, text, buttons, QMessageBox.StandardButton.No)
+    return reply == QMessageBox.StandardButton.Yes
+
+
+class SortItem(QTableWidgetItem):
+    """Table cell that sorts by sort_value (the text by default)."""
+
+    def __init__(self, text, sort_value=None, align_right=False):
+        super().__init__(text)
+        self.sort_value = text if sort_value is None else sort_value
+        if align_right:
+            self.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+    def __lt__(self, other):
+        if isinstance(other, SortItem):
+            return self.sort_value < other.sort_value
+        return super().__lt__(other)
+
+
+def number_item(value, text=None):
+    """Right-aligned cell for a number, sorted numerically; shows two decimals unless text is given."""
+    return SortItem(f"{value:.2f}" if text is None else text, float(value), align_right=True)
 
 
 class TrimmedDoubleSpinBox(QDoubleSpinBox):

@@ -4,7 +4,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 from database.engine import get_session
 from database.models import Counterparty, Item, ItemCategory, Product, TransactionRecord
-from units import normalize_unit
+from repositories.names import find_by_name
+from units import normalize_unit, unit_price_after_discount
 
 @dataclass
 class ProductOverview:
@@ -16,8 +17,7 @@ class ProductOverview:
     last_currency: str | None = None
 
 def get_or_create_category(session, name):
-    folded = name.casefold()
-    category = next((c for c in session.scalars(select(ItemCategory)) if c.name.casefold() == folded), None)
+    category = find_by_name(session.scalars(select(ItemCategory)), name)
     if category is None:
         category = ItemCategory(name=name)
         session.add(category)
@@ -57,12 +57,10 @@ class ProductRepository:
                     continue
                 entry.purchases += 1
                 if entry.last_date is None:
-                    amount = float(row.amount)
                     entry.last_date = row.date
                     entry.last_store = row.store
                     entry.last_currency = row.currency_code
-                    entry.last_price = (float(row.amount * row.price - row.discount) / amount
-                                        if amount > 0 else float(row.price))
+                    entry.last_price = unit_price_after_discount(row.amount, row.price, row.discount)
             return list(overview.values())
 
     @staticmethod
@@ -163,12 +161,7 @@ class ProductRepository:
         with get_session() as session:
             p = session.get(Product, product_id)
             if p:
-                folded_name = new_name.casefold()
-                clash = next(
-                    (o for o in session.scalars(select(Product))
-                     if o.id != product_id and o.name.casefold() == folded_name),
-                    None
-                )
+                clash = find_by_name((o for o in session.scalars(select(Product)) if o.id != product_id), new_name)
                 if clash:
                     raise ValueError(f"Another product is already named '{clash.name}'.")
 

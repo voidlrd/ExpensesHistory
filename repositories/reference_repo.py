@@ -4,15 +4,10 @@ from database.models import (
     Currency, PaymentType, CounterpartyCategory, Counterparty,
     CounterpartyLocation, ItemCategory, TransactionRecord
 )
+from repositories.names import find_by_name
 
 def find_counterparty(session, name):
-    if not name:
-        return None
-    folded = name.casefold()
-    return next(
-        (cp for cp in session.scalars(select(Counterparty)) if cp.name.casefold() == folded),
-        None
-    )
+    return find_by_name(session.scalars(select(Counterparty)), name)
 
 def get_or_create_counterparty(session, name, default_category):
     cp = find_counterparty(session, name)
@@ -81,22 +76,12 @@ class ReferenceRepository:
             ).all()
 
     @staticmethod
-    def get_locations_for_counterparty_id(cp_id: int):
-        with get_session() as session:
-            return session.scalars(
-                select(CounterpartyLocation)
-                .where(CounterpartyLocation.counterparty_id == cp_id)
-                .order_by(CounterpartyLocation.label)
-            ).all()
-
-    @staticmethod
     def add_location(cp_id, label):
         with get_session() as session:
             existing = session.scalars(
                 select(CounterpartyLocation).where(CounterpartyLocation.counterparty_id == cp_id)
             ).all()
-            folded = label.casefold()
-            if any((loc.label or "").casefold() == folded for loc in existing):
+            if find_by_name(existing, label, attr="label"):
                 raise ValueError("This location already exists for this store.")
 
             session.add(CounterpartyLocation(counterparty_id=cp_id, label=label))
