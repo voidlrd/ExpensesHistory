@@ -22,6 +22,14 @@ def main():
     app.setStyle("Fusion")
 
     try:
+        from database.backup import auto_backup
+        backup_path = auto_backup()
+        if backup_path:
+            log.info("automatic backup written to %s", backup_path)
+    except Exception:
+        log.exception("automatic backup failed")
+
+    try:
         from database.engine import init_db, seed_initial_data
         init_db()
         seed_initial_data()

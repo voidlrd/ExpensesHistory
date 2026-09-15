@@ -1,5 +1,3 @@
-import sqlite3
-from contextlib import closing
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QListWidget,
     QListWidgetItem, QFormLayout, QLineEdit, QComboBox,
@@ -8,9 +6,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from sqlalchemy.exc import IntegrityError
 from repositories.reference_repo import ReferenceRepository
-from database.engine import BASE_DIR, DB_PATH
+from database import backup
 from ui.views.products_panel import ProductsPanel
-from datetime import datetime
 
 class DataManagerView(QWidget):
     def __init__(self):
@@ -86,8 +83,10 @@ class DataManagerView(QWidget):
 
         backup_msg = QLabel(
             "<h3>Protect your data</h3>"
-            "Click the button below to instantly create a safe copy of your SQLite database."
-            "It will be saved in a new 'backups' folder inside your project directory."
+            "Click the button below to save a copy of your database in the 'backups' folder next to the app. "
+            "Backups you make here are never deleted.<br><br>"
+            f"The app also backs up automatically when it starts, if anything changed since the last "
+            f"automatic backup, and keeps the {backup.KEEP_AUTO} most recent ones."
         )
         backup_msg.setWordWrap(True)
         backup_layout.addWidget(backup_msg)
@@ -101,14 +100,7 @@ class DataManagerView(QWidget):
 
     def create_backup(self):
         try:
-            backup_dir = BASE_DIR / "backups"
-            backup_dir.mkdir(exist_ok=True)
-            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            backup_path = backup_dir / f"expense_tracker_{timestamp}.db"
-
-            with closing(sqlite3.connect(DB_PATH)) as src, closing(sqlite3.connect(backup_path)) as dst:
-                src.backup(dst)
-
+            backup_path = backup.create_backup()
             QMessageBox.information(self, "Success", f"Backup created successfully!\n\nLocation: {backup_path}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to create backup:\n{str(e)}")
