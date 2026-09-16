@@ -11,9 +11,10 @@ SQLAlchemy on top of a local SQLite database.
 - Edit or delete any saved transaction or income record
 - History: period presets, live filters, search by store, receipt ID or product, and totals for what's shown
 - Dashboard: step through months, see income and expenses against the previous month and over the last 12 months, and open any store or category to see what you bought
-- Price tracker: searchable product list, effective unit price history per currency with a chart, and the average price per store
+- Brands per product: "Lapte" keeps its own list of brands the way a store keeps locations, so names stay clean. A brand is optional on every purchase, blank when you don't know it, and renaming one fixes every past purchase
+- Price tracker: searchable product list, effective unit price history per currency with a chart, a brand filter, and the average price per store and per brand
 - Stores & People tab: search, see receipts, spending and income per store, merge duplicates, rename locations, hide or delete
-- Products tab: search and filter by category, brand and unit; set categories in bulk, hide, merge duplicates, and delete products that were never bought
+- Products tab: search and filter by category, brand and unit; manage each product's brands; set categories in bulk, hide, merge duplicates, and delete products that were never bought
 - Backups tab: every backup listed, one-click backup and restore, plus an automatic backup at startup (the 5 most recent are kept)
 - Fill a receipt from a photo using any AI chat app (Claude, Gemini, ...), with category suggestions for new products, then review and save
 - Warns when a receipt with the same ID UNIC was already saved
@@ -28,6 +29,9 @@ SQLAlchemy on top of a local SQLite database.
 4. Check the message under the items: it confirms the items add up to the receipt
    total, or shows the difference, and lists new products and anything the AI was
    unsure about. Nothing is saved until you press Save.
+
+The scan also reads the brand off each line when the receipt prints one, and leaves
+it blank otherwise.
 
 The app never contacts an AI service itself; it only reads the pasted JSON.
 
