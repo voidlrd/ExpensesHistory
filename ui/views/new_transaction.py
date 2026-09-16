@@ -11,7 +11,7 @@ from decimal import Decimal
 from repositories.reference_repo import ReferenceRepository
 from repositories.product_repo import ProductRepository
 from repositories.transaction_repo import TransactionRepository, line_total
-from ui.widgets import RowOutline, TrimmedDoubleSpinBox, ask_yes_no, repopulate_combo
+from ui.widgets import RowOutline, TrimmedDoubleSpinBox, ask_yes_no, repopulate_combo, show_status
 from units import UNITS, normalize_unit
 from receipt_import import build_prompt, merge_identical_items
 from ui.views.scan_dialog import ScanPasteDialog
@@ -149,11 +149,15 @@ class NewTransactionView(QWidget):
         self.total_label = QLabel("Total: 0.00")
         self.total_label.setStyleSheet("font-weight: bold; font-size: 16px;")
 
+        self.status_label = QLabel()
+        self.status_label.setWordWrap(True)
+
         save_text = "Update Transaction (Ctrl+S)" if self.edit_tx_id else "Save Transaction (Ctrl+S)"
         self.save_btn = QPushButton(save_text)
         self.save_btn.setStyleSheet("background-color: #4CAF50; color: white; padding: 5px 15px;")
         self.save_btn.clicked.connect(self.save_transaction)
 
+        footer_layout.addWidget(self.status_label, 1)
         footer_layout.addStretch()
         footer_layout.addWidget(self.duplicate_warning_label)
         footer_layout.addSpacing(10)
@@ -557,16 +561,18 @@ class NewTransactionView(QWidget):
                                            self.raw_total, details["currency_code"]):
             return
 
+        saved_total = self.raw_total
         try:
             if self.edit_tx_id:
                 TransactionRepository.update_transaction(self.edit_tx_id, **details)
-                QMessageBox.information(self, "Success", "Transaction updated successfully!")
                 self.transaction_saved.emit()
             else:
                 TransactionRepository.save_transaction(**details)
-                QMessageBox.information(self, "Success", "Transaction saved successfully!")
                 self.transaction_saved.emit()
                 self.reset_form()
+                show_status(self.status_label,
+                            f"✓ Saved {counterparty_name}: {saved_total:.2f} {details['currency_code']} "
+                            f"· {len(items_data)} item(s)")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save transaction:\n{str(e)}")
 
