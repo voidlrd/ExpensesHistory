@@ -167,6 +167,41 @@ def test_rename_a_location(data_manager, monkeypatch):
     assert data_manager.loc_list.item(0).text() == "Centru Nou"
 
 
+# ---------- currencies ----------
+
+def test_add_a_currency_and_use_it_on_a_receipt(data_manager):
+    from ui.views.new_transaction import NewTransactionView
+
+    data_manager.currency_input.setText("huf")
+    data_manager.add_currency()
+
+    codes = [data_manager.currency_table.item(r, 0).text() for r in range(data_manager.currency_table.rowCount())]
+    assert "HUF" in codes
+    assert "Added HUF" in data_manager.currency_status_label.text()
+
+    form = NewTransactionView()
+    assert form.currency_input.findData("HUF") >= 0
+
+
+def test_a_bad_currency_code_is_explained_inline(data_manager, popups):
+    data_manager.currency_input.setText("EU")
+    data_manager.add_currency()
+
+    assert popups == []
+    assert "three letters" in data_manager.currency_status_label.text()
+
+
+def test_a_used_currency_is_not_removed(data_manager, popups):
+    ron = next(r for r in range(data_manager.currency_table.rowCount())
+               if data_manager.currency_table.item(r, 0).text() == "RON")
+    data_manager.currency_table.selectRow(ron)
+
+    data_manager.remove_selected_currency()
+
+    assert "can't be removed" in data_manager.currency_status_label.text()
+    assert "RON" in [c.code for c in ReferenceRepository.get_all_currencies()]
+
+
 # ---------- backups ----------
 
 def test_backup_list_starts_empty_without_a_fake_row(data_manager):

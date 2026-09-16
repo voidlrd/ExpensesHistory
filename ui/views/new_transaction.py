@@ -667,7 +667,8 @@ class NewTransactionView(QWidget):
             if idx >= 0:
                 self.currency_input.setCurrentIndex(idx)
             else:
-                notes.append(f"The receipt is in {scan.currency}, which isn't set up in the app. Check the currency.")
+                notes.append(f"The receipt is in {scan.currency}, which isn't set up in the app. "
+                             "Add it in Data Manager → Currencies, or check the currency.")
         if scan.payment_type:
             for i in range(self.payment_type_input.count()):
                 if self.payment_type_input.itemText(i).casefold() == scan.payment_type.casefold():

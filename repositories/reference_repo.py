@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
@@ -11,6 +12,7 @@ from database.models import (
 from repositories.names import find_by_name
 
 INCOME_CATEGORIES = ("Employer", "Person")
+CURRENCY_CODE = re.compile(r"^[A-Z]{3}$")
 
 @dataclass
 class CounterpartyOverview:
@@ -58,6 +60,49 @@ class ReferenceRepository:
     def get_all_currencies():
         with get_session() as session:
             return session.scalars(select(Currency)).all()
+
+    @staticmethod
+    def get_currency_usage():
+        """{code: (receipts, income records)} for every currency."""
+        with get_session() as session:
+            usage = {c.code: [0, 0] for c in session.scalars(select(Currency).order_by(Currency.code))}
+            for code, count in session.execute(
+                select(TransactionRecord.currency_code, func.count()).group_by(TransactionRecord.currency_code)
+            ):
+                usage.setdefault(code, [0, 0])[0] = count
+            for code, count in session.execute(
+                select(IncomeRecord.currency_code, func.count()).group_by(IncomeRecord.currency_code)
+            ):
+                usage.setdefault(code, [0, 0])[1] = count
+            return {code: tuple(counts) for code, counts in usage.items()}
+
+    @staticmethod
+    def add_currency(code):
+        code = (code or "").strip().upper()
+        if not CURRENCY_CODE.match(code):
+            raise ValueError("A currency code is three letters, like EUR, HUF or GBP.")
+        with get_session() as session:
+            if session.get(Currency, code) is not None:
+                raise ValueError(f"{code} is already in the list.")
+            session.add(Currency(code=code))
+            session.commit()
+        return code
+
+    @staticmethod
+    def remove_currency(code):
+        with get_session() as session:
+            currency = session.get(Currency, code)
+            if currency is None:
+                return
+            receipts = session.scalar(
+                select(func.count()).select_from(TransactionRecord).where(TransactionRecord.currency_code == code))
+            incomes = session.scalar(
+                select(func.count()).select_from(IncomeRecord).where(IncomeRecord.currency_code == code))
+            if receipts or incomes:
+                raise ValueError(f"{code} is used by {receipts} receipt(s) and {incomes} income record(s), "
+                                 "so it can't be removed.")
+            session.delete(currency)
+            session.commit()
 
     @staticmethod
     def get_all_payment_types():

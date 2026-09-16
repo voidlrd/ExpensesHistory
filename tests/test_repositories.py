@@ -409,6 +409,40 @@ def test_rename_location_rejects_a_clash(save_receipt):
     assert sorted(l.label for l in ReferenceRepository.get_locations_for_counterparty("Lidl")) == ["Centru", "Garii"]
 
 
+# ---------- currencies ----------
+
+def test_add_currency_normalises_the_code(db):
+    assert ReferenceRepository.add_currency(" huf ") == "HUF"
+    assert "HUF" in [c.code for c in ReferenceRepository.get_all_currencies()]
+
+
+@pytest.mark.parametrize("code", ["", "EU", "EURO", "E1R"])
+def test_add_currency_rejects_bad_codes(db, code):
+    with pytest.raises(ValueError, match="three letters"):
+        ReferenceRepository.add_currency(code)
+
+
+def test_add_currency_rejects_a_duplicate(db):
+    with pytest.raises(ValueError, match="already"):
+        ReferenceRepository.add_currency("ron")
+
+
+def test_currency_in_use_cannot_be_removed(save_receipt, save_income):
+    save_receipt(SEPT, "Lidl", [item("Punga", price="0.81")], currency="EUR")
+    save_income(SEPT, "Acme", "100.00", currency="EUR")
+
+    assert ReferenceRepository.get_currency_usage()["EUR"] == (1, 1)
+    with pytest.raises(ValueError, match="1 receipt"):
+        ReferenceRepository.remove_currency("EUR")
+
+
+def test_unused_currency_can_be_removed(db):
+    ReferenceRepository.add_currency("HUF")
+    ReferenceRepository.remove_currency("HUF")
+
+    assert "HUF" not in [c.code for c in ReferenceRepository.get_all_currencies()]
+
+
 # ---------- income ----------
 
 def test_income_search_and_duplicates(save_income):

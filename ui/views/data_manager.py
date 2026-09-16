@@ -5,8 +5,8 @@ from PyQt6.QtWidgets import (
     QPushButton, QTabWidget, QMessageBox, QGroupBox, QLabel, QInputDialog,
     QTableWidget, QHeaderView, QAbstractItemView
 )
-from PyQt6.QtCore import Qt, QItemSelectionModel, QUrl, pyqtSignal
-from PyQt6.QtGui import QBrush, QColor, QDesktopServices
+from PyQt6.QtCore import Qt, QItemSelectionModel, QRegularExpression, QUrl, pyqtSignal
+from PyQt6.QtGui import QBrush, QColor, QDesktopServices, QRegularExpressionValidator
 from sqlalchemy.exc import IntegrityError
 from repositories.names import fold_text
 from repositories.reference_repo import ReferenceRepository
@@ -48,6 +48,7 @@ class DataManagerView(QWidget):
         self.products_panel.show_price_history.connect(self.show_price_history)
         self.tabs.addTab(self.products_panel, "Products")
 
+        self.tabs.addTab(self._build_currency_tab(), "Currencies")
         self.tabs.addTab(self._build_backup_tab(), "Backups")
 
         main_layout.addWidget(self.tabs)
@@ -170,6 +171,7 @@ class DataManagerView(QWidget):
 
         self.refresh_cp_table()
         self.products_panel.load_data()
+        self.load_currencies()
 
     def _entry(self, cp_id):
         return next((e for e in self.overview if e.counterparty.id == cp_id), None)
@@ -415,6 +417,94 @@ class DataManagerView(QWidget):
             self.load_locations(cp)
         except ValueError as e:
             QMessageBox.warning(self, "Action Denied", str(e))
+
+    # ---------- currencies ----------
+
+    def _build_currency_tab(self):
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        intro = QLabel("Currencies you can pick on receipts and income. "
+                       "Use the three-letter code, like EUR, HUF or GBP.")
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        self.currency_table = QTableWidget(0, 3)
+        self.currency_table.setHorizontalHeaderLabels(["Code", "Receipts", "Income"])
+        self.currency_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.currency_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.currency_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.currency_table.verticalHeader().setVisible(False)
+        self.currency_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.currency_table.setMaximumWidth(420)
+        layout.addWidget(self.currency_table)
+
+        row = QHBoxLayout()
+        self.currency_input = QLineEdit()
+        self.currency_input.setPlaceholderText("New code, e.g. HUF")
+        self.currency_input.setMaxLength(3)
+        self.currency_input.setMaximumWidth(140)
+        self.currency_input.setValidator(QRegularExpressionValidator(QRegularExpression("[A-Za-z]{0,3}")))
+        self.currency_input.returnPressed.connect(self.add_currency)
+        self.currency_add_btn = QPushButton("Add")
+        self.currency_add_btn.clicked.connect(self.add_currency)
+        self.currency_remove_btn = QPushButton("Remove Selected")
+        self.currency_remove_btn.setToolTip("Only for currencies no receipt or income uses")
+        self.currency_remove_btn.clicked.connect(self.remove_selected_currency)
+
+        row.addWidget(self.currency_input)
+        row.addWidget(self.currency_add_btn)
+        row.addSpacing(20)
+        row.addWidget(self.currency_remove_btn)
+        row.addStretch()
+        layout.addLayout(row)
+
+        self.currency_status_label = QLabel()
+        self.currency_status_label.setWordWrap(True)
+        layout.addWidget(self.currency_status_label)
+        layout.addStretch()
+        return tab
+
+    def load_currencies(self):
+        self.currency_table.setRowCount(0)
+        for row, (code, (receipts, incomes)) in enumerate(self.ref_repo.get_currency_usage().items()):
+            self.currency_table.insertRow(row)
+            code_item = SortItem(code)
+            code_item.setData(Qt.ItemDataRole.UserRole, code)
+            self.currency_table.setItem(row, 0, code_item)
+            self.currency_table.setItem(row, 1, SortItem(str(receipts), receipts, align_right=True))
+            self.currency_table.setItem(row, 2, SortItem(str(incomes), incomes, align_right=True))
+
+    def add_currency(self):
+        try:
+            code = self.ref_repo.add_currency(self.currency_input.text())
+        except ValueError as e:
+            show_status(self.currency_status_label, str(e), "warn")
+            return
+        self.currency_input.clear()
+        self.load_currencies()
+        show_status(self.currency_status_label, f"✓ Added {code}. It's now offered on receipts and income.")
+
+    def selected_currency(self):
+        rows = {index.row() for index in self.currency_table.selectionModel().selectedRows()}
+        if not rows:
+            return None
+        return self.currency_table.item(min(rows), 0).data(Qt.ItemDataRole.UserRole)
+
+    def remove_selected_currency(self):
+        code = self.selected_currency()
+        if code is None:
+            show_status(self.currency_status_label, "Select a currency in the list first.", "info")
+            return
+        if not ask_yes_no(self, "Remove Currency", f"Remove {code} from the list?"):
+            return
+        try:
+            self.ref_repo.remove_currency(code)
+        except ValueError as e:
+            show_status(self.currency_status_label, str(e), "warn")
+            return
+        self.load_currencies()
+        show_status(self.currency_status_label, f"✓ Removed {code}")
 
     # ---------- backups ----------
 
