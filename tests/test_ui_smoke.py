@@ -282,6 +282,79 @@ def test_receipt_needs_a_product(qt_env, shop_data, popups):
     assert len(TransactionRepository.search_transactions()) == 3
 
 
+# ---------- brands ----------
+
+def test_products_panel_lists_and_adds_brands(qt_env, shop_data, popups, monkeypatch, save_receipt):
+    from PyQt6.QtWidgets import QInputDialog
+    from ui.views.products_panel import ProductsPanel, COL_NAME
+
+    save_receipt(date(2026, 9, 5), "Lidl", [item("Lapte", price="5.49", brand="Zuzu")])
+    panel = ProductsPanel()
+
+    row = next(r for r in range(panel.table.rowCount())
+               if panel.table.item(r, COL_NAME).text() == "Lapte")
+    panel.table.selectRow(row)
+
+    assert panel.brands_group.isEnabled()
+    assert [panel.brand_list.item(i).text() for i in range(panel.brand_list.count())] == ["Zuzu"]
+
+    monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *a, **k: ("Napolact", True)))
+    panel.add_brand()
+
+    brands = [b.label for b in ProductRepository.get_brands(
+        next(p.id for p in ProductRepository.get_all_products() if p.name == "Lapte"))]
+    assert sorted(brands) == ["Napolact", "Zuzu"]
+    assert "Added brand" in panel.status_label.text()
+
+
+def test_receipt_row_offers_the_brands_of_the_chosen_product(qt_env, shop_data, save_receipt):
+    from ui.views.new_transaction import NewTransactionView, COL_PRODUCT, COL_BRAND
+
+    save_receipt(date(2026, 9, 5), "Lidl", [item("Lapte", price="5.49", brand="Zuzu")])
+    view = NewTransactionView()
+    view.load_reference_data()
+
+    view._cell(0, COL_PRODUCT).setCurrentText("Lapte")
+    brand_cb = view._cell(0, COL_BRAND)
+
+    # blank stays available, and the brand bought last is preselected
+    assert brand_cb.itemText(0) == ""
+    assert "Zuzu" in [brand_cb.itemText(i) for i in range(brand_cb.count())]
+    assert brand_cb.currentText() == "Zuzu"
+
+
+def test_saving_a_receipt_keeps_the_brand(qt_env, shop_data, popups):
+    from ui.views.new_transaction import NewTransactionView
+
+    view = NewTransactionView()
+    view.counterparty_input.setCurrentText("Dabo")
+    view._add_filled_row("Iaurt", 1, "pcs", "4.20", 0, False, brand="Zuzu")
+
+    view.save_transaction()
+
+    saved = TransactionRepository.get_transaction_with_items(
+        TransactionRepository.search_transactions()[0].id)
+    assert popups == []
+    assert saved.items[0].brand.label == "Zuzu"
+
+
+def test_price_tracker_filters_by_brand(qt_env, save_receipt):
+    from ui.views.price_tracker import PriceTrackerView
+
+    save_receipt(AUG, "Lidl", [item("Lapte", price="5.49", brand="Zuzu")])
+    save_receipt(SEPT, "Dabo", [item("Lapte", price="5.99", brand="Napolact")])
+
+    view = PriceTrackerView()
+    lapte = next(p.id for p in ProductRepository.get_all_products() if p.name == "Lapte")
+    view.select_product(lapte)
+
+    assert view.table.rowCount() == 2
+    assert "Average per brand" in view.store_summary.text()
+
+    view.brand_filter.setCurrentIndex(view.brand_filter.findData("Zuzu"))
+    assert view.table.rowCount() == 1
+
+
 # ---------- price tracker ----------
 
 def test_price_tracker_filters_products(qt_env, shop_data):

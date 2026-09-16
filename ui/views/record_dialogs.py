@@ -166,7 +166,7 @@ class TransactionDetailDialog(QDialog):
             display_name = f"{item.item_name_override} ({base_name})" if item.item_name_override else base_name
             self.table.setItem(row_idx, 0, QTableWidgetItem(display_name))
             self.table.setItem(row_idx, 1, QTableWidgetItem(product.category.name if product and product.category else ""))
-            self.table.setItem(row_idx, 2, QTableWidgetItem(product.brand if product else ""))
+            self.table.setItem(row_idx, 2, QTableWidgetItem(item.brand.label if item.brand else ""))
             self.table.setItem(row_idx, 3, number_item(item.amount, format_amount(item.amount)))
 
             unit_name = ""

@@ -16,8 +16,8 @@ from units import UNITS, normalize_unit
 from receipt_import import build_prompt, merge_identical_items
 from ui.views.scan_dialog import ScanPasteDialog
 
-(COL_PRODUCT, COL_OVERRIDE, COL_AMOUNT, COL_UNIT, COL_PRICE,
- COL_DISCOUNT, COL_REFUND, COL_TOTAL, COL_DELETE) = range(9)
+(COL_PRODUCT, COL_BRAND, COL_OVERRIDE, COL_AMOUNT, COL_UNIT, COL_PRICE,
+ COL_DISCOUNT, COL_REFUND, COL_TOTAL, COL_DELETE) = range(10)
 
 DUPLICATE_TEXT = "⚠️ Duplicate Detected!"
 
@@ -43,6 +43,7 @@ class NewTransactionView(QWidget):
         self.edit_tx_id = edit_tx_id
         self.products = []
         self.product_units = {}
+        self.brand_index = {}
         self.scan_categories = {}
         self.raw_total = Decimal(0)
 
@@ -114,9 +115,10 @@ class NewTransactionView(QWidget):
         form_layout.addRow("Currency:", self.currency_input)
         layout.addLayout(form_layout)
 
-        self.items_table = QTableWidget(0, 9)
+        self.items_table = QTableWidget(0, 10)
         self.items_table.setHorizontalHeaderLabels(
-            ["Product", "Override", "Amount", "Unit", "Price / unit", "Discount", "Refund", "Total", ""]
+            ["Product", "Brand", "Override", "Amount", "Unit", "Price / unit",
+             "Discount", "Refund", "Total", ""]
         )
         self.items_table.verticalHeader().setVisible(False)
 
@@ -217,6 +219,7 @@ class NewTransactionView(QWidget):
 
         self.products = self.product_repo.get_all_products(include_hidden=False)
         self.product_units = {p.name.casefold(): normalize_unit(p.unit_of_measure) for p in self.products}
+        self.brand_index = self.product_repo.get_brand_index()
 
         repopulate_combo(
             self.currency_input,
@@ -262,7 +265,8 @@ class NewTransactionView(QWidget):
         for item in tx.items:
             unit = normalize_unit(item.product.unit_of_measure) if item.product else None
             self._add_filled_row(item.product.name if item.product else "", item.amount, unit,
-                                 item.price, item.discount, item.refund, item.item_name_override)
+                                 item.price, item.discount, item.refund, item.item_name_override,
+                                 item.brand.label if item.brand else None)
 
         if self.items_table.rowCount() == 0:
             self.add_empty_row()
@@ -305,6 +309,14 @@ class NewTransactionView(QWidget):
             product_cb.addItem(p.name, userData=p.id)
         self.items_table.setCellWidget(row_idx, COL_PRODUCT, product_cb)
 
+        # blank is always allowed: the brand is optional and often unknown
+        brand_cb = QComboBox()
+        brand_cb.setEditable(True)
+        brand_cb.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        brand_cb.setToolTip("Optional. Leave blank when you don't know the brand.")
+        brand_cb.setMinimumWidth(110)
+        self.items_table.setCellWidget(row_idx, COL_BRAND, brand_cb)
+
         override_le = QLineEdit()
         override_le.setPlaceholderText("Optional...")
         self.items_table.setCellWidget(row_idx, COL_OVERRIDE, override_le)
@@ -327,6 +339,9 @@ class NewTransactionView(QWidget):
         )
         product_cb.currentTextChanged.connect(
             lambda text, cb=unit_cb: self._apply_known_unit(text, cb)
+        )
+        product_cb.currentTextChanged.connect(
+            lambda text, cb=brand_cb: self._apply_known_brands(text, cb)
         )
 
         price_sb = QDoubleSpinBox()
@@ -365,13 +380,15 @@ class NewTransactionView(QWidget):
         self.row_outline.set_anchor(product_cb)
         product_cb.setFocus()
 
-    def _add_filled_row(self, name, amount, unit, price, discount, refund, override=None):
+    def _add_filled_row(self, name, amount, unit, price, discount, refund, override=None, brand=None):
         """Append a row with values; unit None keeps whatever the product name suggests."""
         self.add_empty_row()
         row = self.items_table.rowCount() - 1
         amount = float(amount)
 
         self._cell(row, COL_PRODUCT).setCurrentText(name)
+        if brand is not None:
+            self._cell(row, COL_BRAND).setCurrentText(brand)
         self._cell(row, COL_OVERRIDE).setText(override or "")
         if unit:
             self._cell(row, COL_UNIT).setCurrentText(unit)
@@ -396,6 +413,22 @@ class NewTransactionView(QWidget):
         unit = self.product_units.get(product_name.strip().casefold())
         if unit:
             unit_cb.setCurrentText(unit)
+
+    def _apply_known_brands(self, product_name, brand_cb):
+        """Offer that product's brands and preselect the one bought last."""
+        entry = self.brand_index.get(product_name.strip().casefold())
+        typed = brand_cb.currentText().strip()
+
+        brand_cb.blockSignals(True)
+        brand_cb.clear()
+        brand_cb.addItem("")
+        if entry:
+            for label in entry["brands"]:
+                brand_cb.addItem(label)
+            brand_cb.setCurrentText(typed or entry["last"] or "")
+        else:
+            brand_cb.setCurrentText(typed)
+        brand_cb.blockSignals(False)
 
     def remove_row(self, btn):
         for row in range(self.items_table.rowCount()):
@@ -478,6 +511,7 @@ class NewTransactionView(QWidget):
 
         for row in range(self.items_table.rowCount()):
             product_cb = self._cell(row, COL_PRODUCT)
+            brand_cb = self._cell(row, COL_BRAND)
             override_le = self._cell(row, COL_OVERRIDE)
             amount_sb = self._cell(row, COL_AMOUNT)
             unit_cb = self._cell(row, COL_UNIT)
@@ -486,7 +520,7 @@ class NewTransactionView(QWidget):
             refund_widget = self._cell(row, COL_REFUND)
 
             # never test a QComboBox for truth: PyQt maps __len__ to count()
-            if None in (product_cb, override_le, amount_sb, unit_cb, price_sb, disc_sb, refund_widget):
+            if None in (product_cb, brand_cb, override_le, amount_sb, unit_cb, price_sb, disc_sb, refund_widget):
                 continue
 
             product_name = product_cb.currentText().strip()
@@ -496,6 +530,7 @@ class NewTransactionView(QWidget):
 
             items_data.append({
                 "product_name": product_name,
+                "brand": brand_cb.currentText().strip() or None,
                 "override": override_le.text().strip() or None,
                 "amount": amount_sb.value(),
                 "unit": unit_cb.currentText(),
@@ -673,7 +708,8 @@ class NewTransactionView(QWidget):
             if unit == "pcs" and item.unit != "pcs" and not float(item.amount).is_integer():
                 unit = item.unit
                 notes.append(f"{name} was weighed ({float(item.amount):g} {unit}), so saving will change its unit to {unit}.")
-            self._add_filled_row(name, item.amount, unit, item.unit_price, item.discount, item.refund)
+            self._add_filled_row(name, item.amount, unit, item.unit_price, item.discount, item.refund,
+                                 brand=item.brand)
 
         return rows, new_products, categorised
 

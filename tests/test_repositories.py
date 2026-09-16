@@ -56,7 +56,7 @@ def test_existing_product_gains_a_category_but_keeps_the_one_it_has(save_receipt
 
 def test_changing_a_product_to_a_weighed_unit_drops_its_package_size(save_receipt):
     save_receipt(SEPT, "Lidl", [item("Rosii", price="9.99")])
-    ProductRepository.update_product(product_id("Rosii"), "Rosii", None, "pcs", None, Decimal("500"), "g")
+    ProductRepository.update_product(product_id("Rosii"), "Rosii", "pcs", None, Decimal("500"), "g")
 
     save_receipt(SEPT, "Lidl", [item("Rosii", unit="kg", price="9.99")])
 
@@ -177,6 +177,98 @@ def test_set_category_and_hidden_in_bulk(save_receipt):
     assert ProductRepository.get_all_products() == []
     hidden = ProductRepository.get_product_overview()
     assert {e.product.category.name for e in hidden} == {"Basics"}
+
+
+# ---------- brands ----------
+
+def test_saving_with_a_brand_creates_it_once(save_receipt):
+    save_receipt(SEPT, "Lidl", [item("Lapte", price="5.49", brand="Zuzu")])
+    save_receipt(AUG, "Lidl", [item("Lapte", price="5.49", brand="zuzu")])
+
+    brands = ProductRepository.get_brands(product_id("Lapte"))
+    assert [b.label for b in brands] == ["Zuzu"]
+
+
+def test_a_blank_brand_is_allowed_and_stays_blank(save_receipt):
+    save_receipt(SEPT, "Lidl", [item("Lapte", price="5.49")])
+
+    tx = TransactionRepository.get_transaction_with_items(
+        TransactionRepository.search_transactions()[0].id)
+    assert ProductRepository.get_brands(product_id("Lapte")) == []
+    assert tx.items[0].brand is None
+
+
+def test_two_brands_live_under_one_product(save_receipt):
+    save_receipt(SEPT, "Lidl", [item("Lapte", price="5.49", brand="Zuzu")])
+    save_receipt(SEPT, "Dabo", [item("Lapte", price="5.99", brand="Napolact")])
+
+    overview = ProductRepository.get_product_overview()
+    assert len(overview) == 1
+    assert sorted(overview[0].brands) == ["Napolact", "Zuzu"]
+
+
+def test_renaming_a_brand_fixes_past_purchases(save_receipt):
+    save_receipt(SEPT, "Lidl", [item("Lapte", price="5.49", brand="Zuzu")])
+    brand = ProductRepository.get_brands(product_id("Lapte"))[0]
+
+    ProductRepository.rename_brand(brand.id, "Zuzu Lapte")
+
+    tx = TransactionRepository.get_transaction_with_items(
+        TransactionRepository.search_transactions()[0].id)
+    assert tx.items[0].brand.label == "Zuzu Lapte"
+
+
+def test_a_brand_in_use_cannot_be_removed(save_receipt):
+    save_receipt(SEPT, "Lidl", [item("Lapte", price="5.49", brand="Zuzu")])
+    brand = ProductRepository.get_brands(product_id("Lapte"))[0]
+
+    with pytest.raises(ValueError, match="past purchases"):
+        ProductRepository.remove_brand(brand.id)
+
+
+def test_an_unused_brand_can_be_added_and_removed(save_receipt):
+    save_receipt(SEPT, "Lidl", [item("Lapte", price="5.49")])
+    pid = product_id("Lapte")
+
+    ProductRepository.add_brand(pid, "Napolact")
+    assert [b.label for b in ProductRepository.get_brands(pid)] == ["Napolact"]
+
+    with pytest.raises(ValueError, match="already has that brand"):
+        ProductRepository.add_brand(pid, "napolact")
+
+    ProductRepository.remove_brand(ProductRepository.get_brands(pid)[0].id)
+    assert ProductRepository.get_brands(pid) == []
+
+
+def test_brand_index_offers_brands_and_the_last_one_used(save_receipt):
+    save_receipt(AUG, "Lidl", [item("Lapte", price="5.49", brand="Napolact")])
+    save_receipt(SEPT, "Lidl", [item("Lapte", price="5.49", brand="Zuzu")])
+
+    index = ProductRepository.get_brand_index()
+
+    assert sorted(index["lapte"]["brands"]) == ["Napolact", "Zuzu"]
+    assert index["lapte"]["last"] == "Zuzu"
+
+
+def test_receipts_can_be_searched_by_brand(save_receipt):
+    save_receipt(SEPT, "Lidl", [item("Lapte", price="5.49", brand="Zuzu")])
+    save_receipt(SEPT, "Dabo", [item("Paine", price="3.50")])
+
+    assert len(TransactionRepository.search_transactions(text="zuzu")) == 1
+
+
+def test_merging_products_folds_their_brands(save_receipt):
+    save_receipt(SEPT, "Lidl", [item("Lapte", price="5.49", brand="Zuzu")])
+    save_receipt(AUG, "Lidl", [item("LAPTE Zuzu", price="5.99", brand="Zuzu")])
+    save_receipt(AUG, "Dabo", [item("LAPTE Zuzu", price="5.99", brand="Napolact")])
+
+    keep, other = product_id("Lapte"), product_id("LAPTE Zuzu")
+    ProductRepository.merge_products(keep, [other])
+
+    brands = [b.label for b in ProductRepository.get_brands(keep)]
+    lines = ProductRepository.get_product_price_history(keep)
+    assert sorted(brands) == ["Napolact", "Zuzu"]
+    assert sorted(line.brand.label for line in lines) == ["Napolact", "Zuzu", "Zuzu"]
 
 
 # ---------- stores and people ----------

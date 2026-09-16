@@ -9,6 +9,8 @@ from ui.widgets import SortItem, format_amount, make_stat_card, repopulate_combo
 from units import describe_package, normalize_unit, price_per_base, unit_price_after_discount
 from datetime import datetime
 
+BRAND_NONE = "__none__"
+
 class TimeAxisItem(pg.AxisItem):
     def tickStrings(self, values, scale, spacing):
         strs = []
@@ -47,11 +49,17 @@ class PriceTrackerView(QWidget):
         self.currency_selector = QComboBox()
         self.currency_selector.currentIndexChanged.connect(self.on_currency_changed)
 
+        self.brand_filter = QComboBox()
+        self.brand_filter.currentIndexChanged.connect(self.refresh_history)
+
         header_layout.addWidget(title)
         header_layout.addSpacing(20)
         header_layout.addWidget(self.product_filter)
         header_layout.addWidget(QLabel("Product:"))
         header_layout.addWidget(self.product_search)
+        header_layout.addSpacing(10)
+        header_layout.addWidget(QLabel("Brand:"))
+        header_layout.addWidget(self.brand_filter)
         header_layout.addSpacing(10)
         header_layout.addWidget(QLabel("Currency:"))
         header_layout.addWidget(self.currency_selector)
@@ -78,9 +86,10 @@ class PriceTrackerView(QWidget):
         self.plot_widget.setVisible(False)
         layout.addWidget(self.plot_widget)
 
-        self.table = QTableWidget(0, 5)
+        self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(
-            ["Date", "Store (Counterparty)", "Amount Bought", "Price (after discount)", "Per kg / l"]
+            ["Date", "Store (Counterparty)", "Brand", "Amount Bought",
+             "Price (after discount)", "Per kg / l"]
         )
 
         header = self.table.horizontalHeader()
@@ -108,13 +117,23 @@ class PriceTrackerView(QWidget):
         wanted = fold_text(self.product_filter.text().strip())
         entries = [
             (p.name, p.id) for p in self.all_products
-            if not wanted or wanted in fold_text(p.name) or wanted in fold_text(p.brand)
+            if not wanted or wanted in fold_text(p.name)
         ]
         repopulate_combo(self.product_search, entries, placeholder=("", None), block_signals=True)
+
+    def load_brands(self):
+        product_id = self.product_search.currentData()
+        brands = self.product_repo.get_brands(product_id) if product_id else []
+        entries = [(b.label, b.label) for b in brands]
+        if entries:
+            entries.append(("No brand", BRAND_NONE))
+        repopulate_combo(self.brand_filter, entries, placeholder=("All brands", None), block_signals=True)
+        self.brand_filter.setEnabled(bool(entries))
 
     def on_filter_changed(self):
         self._fill_product_combo()
         self.load_currencies()
+        self.load_brands()
         self.refresh_history()
 
     def select_product(self, product_id):
@@ -129,10 +148,12 @@ class PriceTrackerView(QWidget):
         if index >= 0:
             self.product_search.setCurrentIndex(index)
         self.load_currencies()
+        self.load_brands()
         self.refresh_history()
 
     def on_product_selected(self, index):
         self.load_currencies()
+        self.load_brands()
         self.refresh_history()
 
     def on_currency_changed(self, index):
@@ -159,6 +180,13 @@ class PriceTrackerView(QWidget):
         items = self.product_repo.get_product_price_history(
             product_id, self.currency_selector.currentData()
         )
+
+        brand = self.brand_filter.currentData()
+        if brand == BRAND_NONE:
+            items = [i for i in items if i.brand is None]
+        elif brand:
+            items = [i for i in items if i.brand and i.brand.label == brand]
+
         self.populate_table_and_stats(items)
 
     @staticmethod
@@ -198,16 +226,17 @@ class PriceTrackerView(QWidget):
 
             self.table.setItem(row_idx, 0, SortItem(tx.date.strftime("%Y-%m-%d")))
             self.table.setItem(row_idx, 1, QTableWidgetItem(store_name))
+            self.table.setItem(row_idx, 2, SortItem(item.brand.label if item.brand else ""))
 
             amount_text = f"{format_amount(item.amount)} {unit}"
             package = describe_package(product.package_size, product.package_unit)
             if package:
                 amount_text += f" x {package}"
-            self.table.setItem(row_idx, 2, SortItem(amount_text, float(item.amount), align_right=True))
-            self.table.setItem(row_idx, 3, SortItem(f"{eff_price:.2f} {tx.currency_code} / {unit}",
+            self.table.setItem(row_idx, 3, SortItem(amount_text, float(item.amount), align_right=True))
+            self.table.setItem(row_idx, 4, SortItem(f"{eff_price:.2f} {tx.currency_code} / {unit}",
                                                     eff_price, align_right=True))
             per_base = f"{price:.2f} {tx.currency_code} / {basis}" if basis in ("kg", "l") else ""
-            self.table.setItem(row_idx, 4, SortItem(per_base, price if per_base else -1.0, align_right=True))
+            self.table.setItem(row_idx, 5, SortItem(per_base, price if per_base else -1.0, align_right=True))
         self.table.setSortingEnabled(True)
 
         lowest = min(entries, key=lambda e: e[2])
@@ -231,27 +260,35 @@ class PriceTrackerView(QWidget):
         self._update_card(self.lowest_price_label, lowest)
         self._update_card(self.latest_price_label, latest)
         self._update_card(self.highest_price_label, highest)
-        self._update_store_summary(entries)
+        self._update_summary(entries)
 
-    def _update_store_summary(self, entries):
-        """Average price per store, cheapest first."""
-        by_store = {}
-        for item, _, price, basis in entries:
-            tx = item.transaction
-            store = tx.counterparty.name if tx.counterparty else "Unknown"
-            by_store.setdefault(store, []).append(price)
-
-        if len(by_store) < 2:
-            self.store_summary.setText("")
-            return
-
+    def _update_summary(self, entries):
+        """Average price per store and per brand, cheapest first."""
         currency = entries[0][0].transaction.currency_code
         basis = entries[0][3]
-        averages = sorted(((sum(p) / len(p), store) for store, p in by_store.items()))
-        parts = [f"{store} {avg:.2f}" for avg, store in averages]
-        self.store_summary.setText(
-            f"Average per store ({currency} / {basis}), cheapest first:  " + "  ·  ".join(parts)
-        )
+
+        def averages(key):
+            groups = {}
+            for item, _, price, _ in entries:
+                groups.setdefault(key(item), []).append(price)
+            return sorted(((sum(p) / len(p), name) for name, p in groups.items()))
+
+        def store_of(item):
+            tx = item.transaction
+            return tx.counterparty.name if tx.counterparty else "Unknown"
+
+        lines = []
+        by_store = averages(store_of)
+        if len(by_store) > 1:
+            lines.append(f"Average per store ({currency} / {basis}), cheapest first:  "
+                         + "  ·  ".join(f"{name} {avg:.2f}" for avg, name in by_store))
+
+        by_brand = averages(lambda item: item.brand.label if item.brand else "no brand")
+        if len(by_brand) > 1:
+            lines.append(f"Average per brand ({currency} / {basis}), cheapest first:  "
+                         + "  ·  ".join(f"{name} {avg:.2f}" for avg, name in by_brand))
+
+        self.store_summary.setText("\n".join(lines))
 
     def _update_card(self, card_dict, entry):
         item, _, price, basis = entry

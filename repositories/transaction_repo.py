@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 from database.engine import get_session
 from database.models import TransactionRecord, Item, Product
-from repositories.product_repo import get_or_create_category
+from repositories.product_repo import get_or_create_brand, get_or_create_category
 from repositories.names import fold_text
 from repositories.reference_repo import find_counterparty, get_or_create_counterparty
 from units import normalize_unit
@@ -45,10 +45,13 @@ def _write_items(session, transaction, items_data):
             if category and product.category_id is None:
                 product.category_id = get_or_create_category(session, category).id
 
+        brand = get_or_create_brand(session, product.id, item_data.get("brand"))
+
         session.add(Item(
             transaction_id=transaction.id,
             product_id=product.id,
             item_name_override=item_data["override"],
+            brand_id=brand.id if brand else None,
             amount=Decimal(str(item_data["amount"])),
             price=Decimal(str(item_data["price"])),
             discount=Decimal(str(item_data["discount"])),
@@ -119,7 +122,8 @@ class TransactionRepository:
                     joinedload(TransactionRecord.counterparty),
                     joinedload(TransactionRecord.payment_type),
                     joinedload(TransactionRecord.location),
-                    joinedload(TransactionRecord.items).joinedload(Item.product)
+                    joinedload(TransactionRecord.items).joinedload(Item.product),
+                    joinedload(TransactionRecord.items).joinedload(Item.brand)
                 )
                 .order_by(TransactionRecord.date.desc(), TransactionRecord.id.desc())
             )
@@ -141,7 +145,8 @@ class TransactionRepository:
             parts = [tx.number, tx.counterparty.name if tx.counterparty else None,
                      tx.location.label if tx.location else None]
             for item in tx.items:
-                parts += [item.product.name if item.product else None, item.item_name_override]
+                parts += [item.product.name if item.product else None, item.item_name_override,
+                          item.brand.label if item.brand else None]
             return fold_text(" ".join(p for p in parts if p))
 
         return [tx for tx in transactions if wanted in haystack(tx)]
@@ -153,7 +158,8 @@ class TransactionRepository:
                 joinedload(TransactionRecord.counterparty),
                 joinedload(TransactionRecord.payment_type),
                 joinedload(TransactionRecord.location),
-                joinedload(TransactionRecord.items).joinedload(Item.product).joinedload(Product.category)
+                joinedload(TransactionRecord.items).joinedload(Item.product).joinedload(Product.category),
+                joinedload(TransactionRecord.items).joinedload(Item.brand)
             ).where(TransactionRecord.id == tx_id)
             return session.scalar(stmt)
 

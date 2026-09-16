@@ -121,6 +121,27 @@ def test_merge_identical_items_keeps_weighed_lines_apart():
     assert counts == {}
 
 
+def test_parse_scan_reads_an_optional_brand():
+    scan = parse_scan('{"items": ['
+                      '{"name": "Lapte", "amount": 1, "unit_price": 5.49, "brand": "Zuzu"},'
+                      '{"name": "Paine", "amount": 1, "unit_price": 3.50}]}')
+
+    assert scan.items[0].brand == "Zuzu"
+    assert scan.items[1].brand is None
+
+
+def test_merge_identical_items_keeps_different_brands_apart():
+    zuzu = scanned("Lapte", 1, "5.49")
+    zuzu.brand = "Zuzu"
+    napolact = scanned("Lapte", 1, "5.49")
+    napolact.brand = "Napolact"
+
+    items, counts = merge_identical_items([zuzu, napolact])
+
+    assert len(items) == 2
+    assert counts == {}
+
+
 def test_merge_identical_items_keeps_different_prices_apart():
     items, _ = merge_identical_items([scanned("Punga", 1, "0.81"), scanned("Punga", 1, "0.50")])
 

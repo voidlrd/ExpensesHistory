@@ -28,9 +28,11 @@ def payment_type_id(db):
     return ReferenceRepository.get_all_payment_types()[0].id
 
 
-def item(name, amount=1, unit="pcs", price="1.00", discount=0, refund=False, category=None, override=None):
+def item(name, amount=1, unit="pcs", price="1.00", discount=0, refund=False, category=None,
+         override=None, brand=None):
     return {
         "product_name": name,
+        "brand": brand,
         "override": override,
         "amount": amount,
         "unit": unit,

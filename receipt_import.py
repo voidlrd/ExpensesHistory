@@ -20,9 +20,9 @@ Reply with ONLY one JSON code block and no other text, in exactly this shape:
   "payment_type": "Debit Card",
   "total": 23.92,
   "items": [
-    {"name": "Banane", "amount": 1.016, "unit": "kg", "unit_price": 8.99, "discount": 0, "refund": false, "category": "Fruit"},
-    {"name": "Rosii cherry", "amount": 2, "unit": "pcs", "unit_price": 9.99, "discount": 6.00, "refund": false, "category": "Vegetable"},
-    {"name": "Punga", "amount": 1, "unit": "pcs", "unit_price": 0.81, "discount": 0, "refund": false, "category": null}
+    {"name": "Banane", "amount": 1.016, "unit": "kg", "unit_price": 8.99, "discount": 0, "refund": false, "category": "Fruit", "brand": null},
+    {"name": "Rosii cherry", "amount": 2, "unit": "pcs", "unit_price": 9.99, "discount": 6.00, "refund": false, "category": "Vegetable", "brand": null},
+    {"name": "Lapte semidegresat", "amount": 1, "unit": "pcs", "unit_price": 5.49, "discount": 0, "refund": false, "category": "Dairy", "brand": "Zuzu"}
   ],
   "notes": []
 }
@@ -43,6 +43,7 @@ Rules:
 - payment_type is one of the known payment types below, or null.
 - name: when the product is one of the known products below, use that exact name. Otherwise write a short readable name in the receipt's language, with normal capitalisation (not ALL CAPS) and obvious abbreviations written out.
 - category is one of the known categories below (exact name) that fits the product, or null when none fits.
+- brand is the maker printed on the line (for example "Zuzu", "Napolact"), or null when the receipt doesn't show one. Keep the brand out of "name": the name stays the plain product.
 - If several photos show parts of one receipt, combine them and do not repeat lines that appear in more than one photo.
 - If something is unreadable, give your best reading or null, and say what is uncertain in "notes". Never invent products or prices.
 """.strip()
@@ -57,6 +58,7 @@ class ScannedItem:
     discount: Decimal = Decimal(0)
     refund: bool = False
     category: str | None = None
+    brand: str | None = None
 
 
 @dataclass
@@ -79,7 +81,8 @@ def merge_identical_items(items):
     """Combine whole-number lines with the same name, unit, price and refund flag; returns (items, {name: lines combined})."""
     merged, positions, counts = [], {}, {}
     for item in items:
-        key = (item.name.casefold(), item.unit, item.unit_price, item.refund)
+        key = (item.name.casefold(), item.unit, item.unit_price, item.refund,
+               (item.brand or "").casefold())
         # weighed lines stay separate: merging them could move the rounded total by a cent
         whole = item.amount == item.amount.to_integral_value()
         if whole and key in positions:
@@ -234,6 +237,7 @@ def parse_scan(text):
             discount=abs(_number(raw.get("discount"), f"{label} discount", Decimal(0))),
             refund=refund,
             category=_text(raw.get("category")),
+            brand=_text(raw.get("brand")),
         ))
 
     if not items:

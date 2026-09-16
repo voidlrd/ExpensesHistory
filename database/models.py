@@ -75,6 +75,18 @@ class Product(Base):
     hidden: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     category: Mapped[Optional["ItemCategory"]] = relationship()
+    brands: Mapped[List["ProductBrand"]] = relationship(back_populates="product", cascade="all, delete-orphan")
+
+class ProductBrand(Base):
+    """A brand this product is sold under, like a location belongs to a store."""
+    __tablename__ = "product_brand"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("product.id"), nullable=False, index=True)
+    label: Mapped[str] = mapped_column(String(100), nullable=False)
+
+    __table_args__ = (UniqueConstraint('product_id', 'label', name='uq_brand_product'),)
+
+    product: Mapped["Product"] = relationship(back_populates="brands")
 
 class Item(Base):
     __tablename__ = "item"
@@ -82,6 +94,7 @@ class Item(Base):
     transaction_id: Mapped[int] = mapped_column(ForeignKey("transaction_record.id"), nullable=False, index=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("product.id"), nullable=False, index=True)
     item_name_override: Mapped[Optional[str]] = mapped_column(String(250))
+    brand_id: Mapped[Optional[int]] = mapped_column("brand", ForeignKey("product_brand.id"), index=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 3), nullable=False)
     price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     discount: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0, nullable=False)
@@ -89,6 +102,7 @@ class Item(Base):
 
     transaction: Mapped["TransactionRecord"] = relationship(back_populates="items")
     product: Mapped["Product"] = relationship()
+    brand: Mapped[Optional["ProductBrand"]] = relationship()
 
 class IncomeRecord(Base):
     __tablename__ = "income_record"

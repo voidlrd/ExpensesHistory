@@ -2,14 +2,14 @@ from decimal import Decimal
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QFormLayout, QGroupBox, QLineEdit, QComboBox,
     QCheckBox, QLabel, QPushButton, QTableWidget, QHeaderView,
-    QAbstractItemView, QMessageBox, QInputDialog, QCompleter
+    QAbstractItemView, QMessageBox, QInputDialog, QListWidget, QListWidgetItem
 )
 from PyQt6.QtGui import QBrush, QColor
 from PyQt6.QtCore import Qt, QItemSelectionModel, pyqtSignal
 from repositories.product_repo import ProductRepository
 from repositories.names import fold_text
 from repositories.reference_repo import ReferenceRepository
-from ui.widgets import SortItem, TrimmedDoubleSpinBox, ask_yes_no, repopulate_combo
+from ui.widgets import SortItem, TrimmedDoubleSpinBox, ask_yes_no, repopulate_combo, show_status
 from units import UNITS, PACKAGE_UNITS, describe_package, normalize_unit
 
 FILTER_ALL = "__all__"
@@ -100,7 +100,6 @@ class ProductsPanel(QWidget):
         self.edit_group = QGroupBox("Edit Product")
         form = QFormLayout(self.edit_group)
         self.name_input = QLineEdit()
-        self.brand_input = QLineEdit()
         self.category_input = QComboBox()
         self.category_input.setEditable(True)
         self.category_input.setPlaceholderText("Select or type new category...")
@@ -128,7 +127,6 @@ class ProductsPanel(QWidget):
         self.status_label.setWordWrap(True)
 
         form.addRow("Name:", self.name_input)
-        form.addRow("Brand:", self.brand_input)
         form.addRow("Category:", self.category_input)
         form.addRow("Unit:", self.unit_input)
         form.addRow("Package size:", package_layout)
@@ -136,7 +134,31 @@ class ProductsPanel(QWidget):
         form.addRow("", self.save_btn)
         form.addRow("", self.history_btn)
         form.addRow("", self.status_label)
-        layout.addWidget(self.edit_group, 2)
+
+        # brands belong to a product the way locations belong to a store
+        self.brands_group = QGroupBox("Brands")
+        brands_layout = QVBoxLayout(self.brands_group)
+        self.brand_list = QListWidget()
+        self.brand_hint = QLabel("Optional. Renaming one fixes every past purchase.")
+        self.brand_hint.setStyleSheet("color: #9E9E9E;")
+        self.brand_hint.setWordWrap(True)
+
+        brand_btns = QHBoxLayout()
+        self.brand_add_btn = QPushButton("Add")
+        self.brand_rename_btn = QPushButton("Rename")
+        self.brand_remove_btn = QPushButton("Remove")
+        for btn in (self.brand_add_btn, self.brand_rename_btn, self.brand_remove_btn):
+            brand_btns.addWidget(btn)
+
+        brands_layout.addWidget(self.brand_list)
+        brands_layout.addWidget(self.brand_hint)
+        brands_layout.addLayout(brand_btns)
+        self.brands_group.setEnabled(False)
+
+        right = QVBoxLayout()
+        right.addWidget(self.edit_group)
+        right.addWidget(self.brands_group)
+        layout.addLayout(right, 2)
 
         self.search_input.textChanged.connect(self.refresh_table)
         self.category_filter.currentIndexChanged.connect(self.refresh_table)
@@ -147,6 +169,9 @@ class ProductsPanel(QWidget):
         self.unit_input.currentTextChanged.connect(self._update_package_enabled)
         self.save_btn.clicked.connect(self.save_product)
         self.history_btn.clicked.connect(self.open_price_history)
+        self.brand_add_btn.clicked.connect(self.add_brand)
+        self.brand_rename_btn.clicked.connect(self.rename_brand)
+        self.brand_remove_btn.clicked.connect(self.remove_brand)
         self.set_category_btn.clicked.connect(self.set_category_for_selected)
         self.hide_btn.clicked.connect(lambda: self.set_hidden_for_selected(True))
         self.unhide_btn.clicked.connect(lambda: self.set_hidden_for_selected(False))
@@ -158,7 +183,7 @@ class ProductsPanel(QWidget):
     def load_data(self):
         self.overview = self.product_repo.get_product_overview()
         categories = self.ref_repo.get_all_item_categories()
-        brands = sorted({o.product.brand for o in self.overview if o.product.brand}, key=str.casefold)
+        brands = sorted({b for o in self.overview for b in o.brands}, key=str.casefold)
 
         repopulate_combo(self.category_filter,
                          [("No category", FILTER_NONE)] + [(c.name, c.id) for c in categories],
@@ -172,10 +197,6 @@ class ProductsPanel(QWidget):
         repopulate_combo(self.bulk_category, [(c.name, c.id) for c in categories], block_signals=True)
         self.bulk_category.setCurrentText(bulk_text)
 
-        completer = QCompleter(brands, self.brand_input)
-        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-        self.brand_input.setCompleter(completer)
-
         self.refresh_table()
 
     def _entry(self, product_id):
@@ -187,7 +208,8 @@ class ProductsPanel(QWidget):
             return False
 
         search = fold_text(self.search_input.text().strip())
-        if search and search not in fold_text(p.name) and search not in fold_text(p.brand):
+        if search and search not in fold_text(p.name) and \
+                not any(search in fold_text(b) for b in entry.brands):
             return False
 
         category = self.category_filter.currentData()
@@ -197,9 +219,10 @@ class ProductsPanel(QWidget):
             return False
 
         brand = self.brand_filter.currentData()
-        if brand == FILTER_NONE and p.brand:
+        if brand == FILTER_NONE and entry.brands:
             return False
-        if brand not in (FILTER_ALL, FILTER_NONE, None) and (p.brand or "").casefold() != brand.casefold():
+        if brand not in (FILTER_ALL, FILTER_NONE, None) and \
+                not any(b.casefold() == brand.casefold() for b in entry.brands):
             return False
 
         unit = self.unit_filter.currentData()
@@ -221,7 +244,7 @@ class ProductsPanel(QWidget):
             package = describe_package(p.package_size, p.package_unit)
             cells = {
                 COL_NAME: SortItem(p.name, fold_text(p.name)),
-                COL_BRAND: SortItem(p.brand or "", fold_text(p.brand)),
+                COL_BRAND: SortItem(", ".join(entry.brands), fold_text(", ".join(entry.brands))),
                 COL_CATEGORY: SortItem(p.category.name if p.category else "No category",
                                        fold_text(p.category.name) if p.category else ""),
                 COL_UNIT: SortItem(unit, unit),
@@ -280,6 +303,7 @@ class ProductsPanel(QWidget):
         self.merge_btn.setEnabled(count >= 2)
 
         self.edit_group.setEnabled(count == 1)
+        self.brands_group.setEnabled(count == 1)
         self.history_btn.setEnabled(count == 1 and bool(entries[0].purchases))
         if count == 1:
             self.edit_group.setTitle("Edit Product")
@@ -287,7 +311,7 @@ class ProductsPanel(QWidget):
         else:
             self.edit_group.setTitle("Edit Product" if count == 0 else f"{count} products selected")
             self.name_input.clear()
-            self.brand_input.clear()
+            self.brand_list.clear()
             self.category_input.setCurrentIndex(0)
             self.package_size.setValue(0)
             self.usage_label.setText("Select one product to edit it." if count == 0
@@ -296,7 +320,7 @@ class ProductsPanel(QWidget):
     def _fill_form(self, entry):
         p = entry.product
         self.name_input.setText(p.name)
-        self.brand_input.setText(p.brand or "")
+        self._fill_brands(p.id)
         idx = self.category_input.findData(p.category_id) if p.category_id else 0
         self.category_input.setCurrentIndex(max(idx, 0))
         self.unit_input.setCurrentText(normalize_unit(p.unit_of_measure))
@@ -331,7 +355,7 @@ class ProductsPanel(QWidget):
         package_size = Decimal(f"{size:.3f}") if size > 0 else None
         try:
             self.product_repo.update_product(
-                ids[0], name, self.brand_input.text().strip(), self.unit_input.currentText(),
+                ids[0], name, self.unit_input.currentText(),
                 self.category_input.currentText().strip(),
                 package_size, self.package_unit.currentText() if package_size else None
             )
@@ -346,6 +370,68 @@ class ProductsPanel(QWidget):
         ids = self.selected_ids()
         if len(ids) == 1:
             self.show_price_history.emit(ids[0])
+
+    # ---------- brands ----------
+
+    def _fill_brands(self, product_id):
+        self.brand_list.clear()
+        for brand in self.product_repo.get_brands(product_id):
+            row = QListWidgetItem(brand.label)
+            row.setData(Qt.ItemDataRole.UserRole, brand.id)
+            self.brand_list.addItem(row)
+
+    def _selected_product_id(self):
+        ids = self.selected_ids()
+        return ids[0] if len(ids) == 1 else None
+
+    def add_brand(self):
+        product_id = self._selected_product_id()
+        if product_id is None:
+            return
+
+        label, ok = QInputDialog.getText(self, "Add Brand", "Brand name:")
+        if not ok or not label.strip():
+            return
+        try:
+            self.product_repo.add_brand(product_id, label.strip())
+        except ValueError as e:
+            QMessageBox.warning(self, "Error", str(e))
+            return
+        self.load_data()
+        show_status(self.status_label, f"✓ Added brand {label.strip()}")
+
+    def rename_brand(self):
+        row = self.brand_list.currentItem()
+        product_id = self._selected_product_id()
+        if row is None or product_id is None:
+            return
+
+        label, ok = QInputDialog.getText(self, "Rename Brand", "New name:", text=row.text())
+        if not ok or not label.strip():
+            return
+        try:
+            self.product_repo.rename_brand(row.data(Qt.ItemDataRole.UserRole), label.strip())
+        except ValueError as e:
+            QMessageBox.warning(self, "Error", str(e))
+            return
+        self.load_data()
+        show_status(self.status_label, f"✓ Renamed to {label.strip()} on every past purchase")
+
+    def remove_brand(self):
+        row = self.brand_list.currentItem()
+        product_id = self._selected_product_id()
+        if row is None or product_id is None:
+            return
+
+        if not ask_yes_no(self, "Remove Brand", f"Remove the brand {row.text()}?"):
+            return
+        try:
+            self.product_repo.remove_brand(row.data(Qt.ItemDataRole.UserRole))
+        except ValueError as e:
+            QMessageBox.warning(self, "Can't Remove", str(e))
+            return
+        self.load_data()
+        show_status(self.status_label, f"✓ Removed brand {row.text()}")
 
     # ---------- bulk actions ----------
 
