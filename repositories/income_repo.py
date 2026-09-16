@@ -4,7 +4,7 @@ from sqlalchemy.orm import joinedload
 from database.engine import get_session
 from database.models import IncomeRecord
 from repositories.names import fold_text
-from repositories.reference_repo import get_or_create_counterparty
+from repositories.reference_repo import find_counterparty, get_or_create_counterparty
 
 class IncomeRepository:
     @staticmethod
@@ -49,6 +49,37 @@ class IncomeRepository:
         if not wanted:
             return incomes
         return [inc for inc in incomes if inc.counterparty and wanted in fold_text(inc.counterparty.name)]
+
+    @staticmethod
+    def check_potential_duplicate(inc_date, counterparty_name, net_amount, currency_code=None, exclude_id=None):
+        with get_session() as session:
+            counterparty = find_counterparty(session, counterparty_name)
+            if not counterparty:
+                return False
+
+            stmt = (
+                select(IncomeRecord)
+                .where(IncomeRecord.date == inc_date)
+                .where(IncomeRecord.net_amount == Decimal(str(net_amount)))
+                .where(IncomeRecord.counterparty_id == counterparty.id)
+            )
+            if currency_code:
+                stmt = stmt.where(IncomeRecord.currency_code == currency_code)
+            if exclude_id:
+                stmt = stmt.where(IncomeRecord.id != exclude_id)
+
+            return session.scalar(stmt) is not None
+
+    @staticmethod
+    def get_recent_incomes(limit=5):
+        with get_session() as session:
+            stmt = (
+                select(IncomeRecord)
+                .options(joinedload(IncomeRecord.counterparty), joinedload(IncomeRecord.payment_type))
+                .order_by(IncomeRecord.date.desc(), IncomeRecord.id.desc())
+                .limit(limit)
+            )
+            return session.scalars(stmt).unique().all()
 
     @staticmethod
     def get_income(income_id):
