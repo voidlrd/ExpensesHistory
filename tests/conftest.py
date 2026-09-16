@@ -61,3 +61,52 @@ def save_income(payment_type_id):
         IncomeRepository.save_income(date, source, amount, currency, payment_type_id)
 
     return _save
+
+
+@pytest.fixture(scope="session")
+def qapp():
+    from PyQt6.QtWidgets import QApplication
+    return QApplication.instance() or QApplication([])
+
+
+@pytest.fixture
+def qt_env(qapp, db, tmp_path, monkeypatch, popups):
+    """Qt with a clean database, settings written to a temp folder and a scratch backup folder.
+
+    Depends on popups so no test can open a modal dialog and hang the run.
+    """
+    from PyQt6.QtCore import QSettings
+    from database import backup
+
+    # keep the real remembered window state out of the tests
+    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+    QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(tmp_path / "settings"))
+    monkeypatch.setattr(backup, "BACKUP_DIR", tmp_path / "backups")
+    return qapp
+
+
+@pytest.fixture
+def popups(monkeypatch):
+    """Records message boxes instead of showing them; confirmations answer Yes.
+
+    Also cancels input dialogs by default, so an unstubbed one returns instead of
+    blocking. A test that needs an answer monkeypatches it again.
+    """
+    from PyQt6.QtWidgets import QInputDialog, QMessageBox
+
+    seen = []
+
+    def record(kind):
+        def handler(parent, title, text, *args, **kwargs):
+            seen.append((kind, text))
+            return QMessageBox.StandardButton.Ok
+        return staticmethod(handler)
+
+    monkeypatch.setattr(QMessageBox, "information", record("info"))
+    monkeypatch.setattr(QMessageBox, "warning", record("warn"))
+    monkeypatch.setattr(QMessageBox, "critical", record("critical"))
+    monkeypatch.setattr(QMessageBox, "question",
+                        staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes))
+    monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *a, **k: ("", False)))
+    monkeypatch.setattr(QInputDialog, "getItem", staticmethod(lambda *a, **k: ("", False)))
+    return seen
