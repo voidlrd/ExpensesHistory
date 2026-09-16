@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QAbstractItemView, QMessageBox, QInputDialog, QCompleter
 )
 from PyQt6.QtGui import QBrush, QColor
-from PyQt6.QtCore import Qt, QItemSelectionModel
+from PyQt6.QtCore import Qt, QItemSelectionModel, pyqtSignal
 from repositories.product_repo import ProductRepository
 from repositories.names import fold_text
 from repositories.reference_repo import ReferenceRepository
@@ -23,6 +23,8 @@ HIDDEN_COLOR = QColor("#9E9E9E")
 MISSING_COLOR = QColor("#FF9800")
 
 class ProductsPanel(QWidget):
+    show_price_history = pyqtSignal(int)
+
     def __init__(self):
         super().__init__()
         self.product_repo = ProductRepository()
@@ -120,7 +122,10 @@ class ProductsPanel(QWidget):
         self.usage_label.setStyleSheet("color: #9E9E9E;")
         self.save_btn = QPushButton("Save Changes")
         self.save_btn.setStyleSheet("background-color: #4CAF50; color: white;")
+        self.history_btn = QPushButton("Show Price History")
+        self.history_btn.setToolTip("Open this product in the Price Tracker tab")
         self.status_label = QLabel()
+        self.status_label.setWordWrap(True)
 
         form.addRow("Name:", self.name_input)
         form.addRow("Brand:", self.brand_input)
@@ -129,6 +134,7 @@ class ProductsPanel(QWidget):
         form.addRow("Package size:", package_layout)
         form.addRow("", self.usage_label)
         form.addRow("", self.save_btn)
+        form.addRow("", self.history_btn)
         form.addRow("", self.status_label)
         layout.addWidget(self.edit_group, 2)
 
@@ -140,6 +146,7 @@ class ProductsPanel(QWidget):
         self.table.itemSelectionChanged.connect(self.on_selection_changed)
         self.unit_input.currentTextChanged.connect(self._update_package_enabled)
         self.save_btn.clicked.connect(self.save_product)
+        self.history_btn.clicked.connect(self.open_price_history)
         self.set_category_btn.clicked.connect(self.set_category_for_selected)
         self.hide_btn.clicked.connect(lambda: self.set_hidden_for_selected(True))
         self.unhide_btn.clicked.connect(lambda: self.set_hidden_for_selected(False))
@@ -273,6 +280,7 @@ class ProductsPanel(QWidget):
         self.merge_btn.setEnabled(count >= 2)
 
         self.edit_group.setEnabled(count == 1)
+        self.history_btn.setEnabled(count == 1 and bool(entries[0].purchases))
         if count == 1:
             self.edit_group.setTitle("Edit Product")
             self._fill_form(entries[0])
@@ -333,6 +341,11 @@ class ProductsPanel(QWidget):
 
         self.load_data()
         self.status_label.setText(f"✓ Saved {name}")
+
+    def open_price_history(self):
+        ids = self.selected_ids()
+        if len(ids) == 1:
+            self.show_price_history.emit(ids[0])
 
     # ---------- bulk actions ----------
 
