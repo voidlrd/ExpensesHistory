@@ -275,6 +275,18 @@ def test_income_sources_leave_out_shops(save_receipt, save_income):
     assert [cp.name for cp in ReferenceRepository.get_income_sources()] == ["Acme"]
 
 
+def test_counterparty_category_is_created_when_the_name_is_new(db):
+    before = {c.name for c in ReferenceRepository.get_all_counterparty_categories()}
+
+    new_id = ReferenceRepository.get_or_create_counterparty_category_id("Utility Provider")
+    same_id = ReferenceRepository.get_or_create_counterparty_category_id("utility provider")
+
+    after = {c.name for c in ReferenceRepository.get_all_counterparty_categories()}
+    assert "Utility Provider" not in before
+    assert "Utility Provider" in after
+    assert new_id == same_id
+
+
 def test_rename_location_rejects_a_clash(save_receipt):
     save_receipt(SEPT, "Lidl", [item("Punga", price="0.81")])
     cp = store_id("Lidl")

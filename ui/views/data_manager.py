@@ -116,6 +116,9 @@ class DataManagerView(QWidget):
 
         self.cp_name_input = QLineEdit()
         self.cp_cat_input = QComboBox()
+        self.cp_cat_input.setEditable(True)
+        self.cp_cat_input.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.cp_cat_input.setPlaceholderText("Select or type a new category...")
         self.cp_usage_label = QLabel()
         self.cp_usage_label.setWordWrap(True)
         self.cp_usage_label.setStyleSheet("color: #9E9E9E;")
@@ -280,8 +283,14 @@ class DataManagerView(QWidget):
             QMessageBox.warning(self, "Error", "Name cannot be empty.")
             return
 
+        category_name = self.cp_cat_input.currentText().strip()
+        if not category_name:
+            QMessageBox.warning(self, "Error", "Choose a category, or type a new one.")
+            return
+
         try:
-            self.ref_repo.update_counterparty(cp.id, new_name, self.cp_cat_input.currentData())
+            category_id = self.ref_repo.get_or_create_counterparty_category_id(category_name)
+            self.ref_repo.update_counterparty(cp.id, new_name, category_id)
         except ValueError as e:
             QMessageBox.warning(self, "Error", str(e))
             return

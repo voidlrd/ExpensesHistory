@@ -25,6 +25,14 @@ class CounterpartyOverview:
 def find_counterparty(session, name):
     return find_by_name(session.scalars(select(Counterparty)), name)
 
+def get_or_create_counterparty_category(session, name):
+    category = find_by_name(session.scalars(select(CounterpartyCategory)), name)
+    if category is None:
+        category = CounterpartyCategory(name=name)
+        session.add(category)
+        session.flush()
+    return category
+
 def get_or_create_counterparty(session, name, default_category):
     cp = find_counterparty(session, name)
     if cp:
@@ -60,6 +68,14 @@ class ReferenceRepository:
     def get_all_counterparty_categories():
         with get_session() as session:
             return session.scalars(select(CounterpartyCategory)).all()
+
+    @staticmethod
+    def get_or_create_counterparty_category_id(name):
+        """Id of a store category, creating it when the name is new."""
+        with get_session() as session:
+            category = get_or_create_counterparty_category(session, name)
+            session.commit()
+            return category.id
 
     @staticmethod
     def get_all_item_categories():

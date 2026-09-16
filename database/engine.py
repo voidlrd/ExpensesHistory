@@ -46,6 +46,7 @@ def seed_initial_data():
                 CounterpartyCategory(name="Employer"),
                 CounterpartyCategory(name="Person"),
                 CounterpartyCategory(name="Online Service"),
+                CounterpartyCategory(name="Utilities"),
             ])
 
         session.commit()
