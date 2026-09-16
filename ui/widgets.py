@@ -2,7 +2,23 @@ from PyQt6.QtWidgets import (
     QDoubleSpinBox, QFrame, QLabel, QMessageBox, QTableWidgetItem, QVBoxLayout, QWidget
 )
 from PyQt6.QtGui import QColor, QPainter, QPen
-from PyQt6.QtCore import QEvent, Qt
+from PyQt6.QtCore import QEvent, Qt, QTimer
+
+STATUS_COLORS = {"ok": "#4CAF50", "info": "#2196F3", "warn": "#F44336"}
+
+
+def show_status(label, text, kind="ok", seconds=8):
+    """Inline confirmation instead of a popup; clears itself after a while."""
+    label.setStyleSheet(f"color: {STATUS_COLORS[kind]}; font-weight: bold;")
+    label.setText(text)
+
+    timer = getattr(label, "_status_timer", None)
+    if timer is None:
+        timer = QTimer(label)
+        timer.setSingleShot(True)
+        timer.timeout.connect(lambda: label.setText(""))
+        label._status_timer = timer
+    timer.start(seconds * 1000)
 
 
 def ask_yes_no(parent, title, text):
