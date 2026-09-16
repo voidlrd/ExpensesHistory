@@ -110,30 +110,6 @@ class TransactionRepository:
             session.commit()
 
     @staticmethod
-    def get_all_transactions(start_date=None, end_date=None, counterparty_id=None, currency_code=None):
-        with get_session() as session:
-            stmt = (
-                select(TransactionRecord)
-                .options(
-                    joinedload(TransactionRecord.counterparty),
-                    joinedload(TransactionRecord.payment_type),
-                    joinedload(TransactionRecord.location)
-                )
-            )
-
-            if start_date:
-                stmt = stmt.where(TransactionRecord.date >= start_date)
-            if end_date:
-                stmt = stmt.where(TransactionRecord.date <= end_date)
-            if counterparty_id:
-                stmt = stmt.where(TransactionRecord.counterparty_id == counterparty_id)
-            if currency_code:
-                stmt = stmt.where(TransactionRecord.currency_code == currency_code)
-
-            stmt = stmt.order_by(TransactionRecord.date.desc())
-            return session.scalars(stmt).unique().all()
-
-    @staticmethod
     def search_transactions(start_date=None, end_date=None, counterparty_id=None, currency_code=None, text=""):
         """Filtered receipts, newest first; text matches store, location, receipt ID or any product on it."""
         with get_session() as session:
