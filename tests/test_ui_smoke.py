@@ -307,6 +307,25 @@ def test_products_panel_lists_and_adds_brands(qt_env, shop_data, popups, monkeyp
     assert "Added brand" in panel.status_label.text()
 
 
+def test_removing_a_brand_clears_it_from_past_purchases(qt_env, popups, save_receipt):
+    from ui.views.products_panel import ProductsPanel, COL_NAME
+
+    save_receipt(SEPT, "Electrica", [item("Service", price="43.33", brand="Utility")])
+    panel = ProductsPanel()
+
+    row = next(r for r in range(panel.table.rowCount())
+               if panel.table.item(r, COL_NAME).text() == "Service")
+    panel.table.selectRow(row)
+    panel.brand_list.setCurrentRow(0)
+
+    panel.remove_brand()
+
+    service = next(p.id for p in ProductRepository.get_all_products() if p.name == "Service")
+    assert ProductRepository.get_brands(service) == []
+    assert "cleared it from 1 purchase" in panel.status_label.text()
+    assert len(TransactionRepository.search_transactions()) == 1
+
+
 def test_receipt_row_offers_the_brands_of_the_chosen_product(qt_env, shop_data, save_receipt):
     from ui.views.new_transaction import NewTransactionView, COL_PRODUCT, COL_BRAND
 

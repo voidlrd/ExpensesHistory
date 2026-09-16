@@ -218,12 +218,28 @@ def test_renaming_a_brand_fixes_past_purchases(save_receipt):
     assert tx.items[0].brand.label == "Zuzu Lapte"
 
 
-def test_a_brand_in_use_cannot_be_removed(save_receipt):
+def test_a_brand_in_use_is_not_removed_by_accident(save_receipt):
     save_receipt(SEPT, "Lidl", [item("Lapte", price="5.49", brand="Zuzu")])
     brand = ProductRepository.get_brands(product_id("Lapte"))[0]
 
-    with pytest.raises(ValueError, match="past purchases"):
+    assert ProductRepository.brand_usage(brand.id) == 1
+    with pytest.raises(ValueError, match="1 past purchase"):
         ProductRepository.remove_brand(brand.id)
+
+
+def test_a_brand_in_use_can_be_cleared_from_its_purchases(save_receipt):
+    save_receipt(SEPT, "Electrica", [item("Service", price="43.33", brand="Utility")])
+    save_receipt(SEPT, "E-on", [item("Service", price="20.00", brand="Utility")])
+    pid = product_id("Service")
+    brand = ProductRepository.get_brands(pid)[0]
+    totals_before = [t.total_amount for t in TransactionRepository.search_transactions()]
+
+    cleared = ProductRepository.remove_brand(brand.id, clear_from_purchases=True)
+
+    assert cleared == 2
+    assert ProductRepository.get_brands(pid) == []
+    assert [line.brand for line in ProductRepository.get_product_price_history(pid)] == [None, None]
+    assert [t.total_amount for t in TransactionRepository.search_transactions()] == totals_before
 
 
 def test_an_unused_brand_can_be_added_and_removed(save_receipt):

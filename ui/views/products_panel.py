@@ -423,15 +423,28 @@ class ProductsPanel(QWidget):
         if row is None or product_id is None:
             return
 
-        if not ask_yes_no(self, "Remove Brand", f"Remove the brand {row.text()}?"):
+        label = row.text()
+        brand_id = row.data(Qt.ItemDataRole.UserRole)
+        used = self.product_repo.brand_usage(brand_id)
+
+        if used:
+            question = (f"{label} is on {used} past purchase(s).\n\n"
+                        "Remove it and leave those purchases without a brand? "
+                        "Prices and totals don't change.")
+        else:
+            question = f"Remove the brand {label}?"
+        if not ask_yes_no(self, "Remove Brand", question):
             return
+
         try:
-            self.product_repo.remove_brand(row.data(Qt.ItemDataRole.UserRole))
+            self.product_repo.remove_brand(brand_id, clear_from_purchases=True)
         except ValueError as e:
             QMessageBox.warning(self, "Can't Remove", str(e))
             return
+
         self.load_data()
-        show_status(self.status_label, f"✓ Removed brand {row.text()}")
+        cleared = f" and cleared it from {used} purchase(s)" if used else ""
+        show_status(self.status_label, f"✓ Removed brand {label}{cleared}")
 
     # ---------- bulk actions ----------
 

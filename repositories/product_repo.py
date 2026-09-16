@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import date
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import joinedload
 from database.engine import get_session
 from database.models import Counterparty, Item, ItemCategory, Product, ProductBrand, TransactionRecord
@@ -131,17 +131,28 @@ class ProductRepository:
             session.commit()
 
     @staticmethod
-    def remove_brand(brand_id):
+    def brand_usage(brand_id):
+        with get_session() as session:
+            return session.scalar(select(func.count(Item.id)).where(Item.brand_id == brand_id)) or 0
+
+    @staticmethod
+    def remove_brand(brand_id, clear_from_purchases=False):
+        """Delete a brand; with clear_from_purchases the lines that used it go back to no brand."""
         with get_session() as session:
             brand = session.get(ProductBrand, brand_id)
             if brand is None:
-                return
-            in_use = session.scalar(select(Item).where(Item.brand_id == brand_id))
-            if in_use:
-                raise ValueError("This brand is on past purchases, so it can't be removed.")
+                return 0
 
+            used = session.scalars(select(Item).where(Item.brand_id == brand_id)).all()
+            if used and not clear_from_purchases:
+                raise ValueError(f"This brand is on {len(used)} past purchase(s).")
+
+            for line in used:
+                line.brand_id = None
+            session.flush()
             session.delete(brand)
             session.commit()
+            return len(used)
 
     @staticmethod
     def get_brand_index():
