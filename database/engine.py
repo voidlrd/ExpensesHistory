@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 from sqlalchemy import create_engine, select, event
@@ -9,7 +10,8 @@ if getattr(sys, 'frozen', False):
 else:
     BASE_DIR = Path(__file__).resolve().parent.parent
 
-DB_PATH = BASE_DIR / "expense_tracker.db"
+# EXPENSES_DB points the app at another database (tests, or a copy of the real one)
+DB_PATH = Path(os.environ["EXPENSES_DB"]) if os.environ.get("EXPENSES_DB") else BASE_DIR / "expense_tracker.db"
 DATABASE_URL = f"sqlite:///{DB_PATH}"
 
 engine = create_engine(DATABASE_URL, echo=False)
