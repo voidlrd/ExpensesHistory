@@ -60,6 +60,9 @@ def test_main_window_builds_every_tab(main_window):
 def test_dashboard_shows_the_month(main_window):
     dashboard = main_window.dashboard_tab
     dashboard.refresh()
+    # the dashboard opens on today's month; pin it to the test data
+    dashboard.year_combo.setCurrentIndex(dashboard.year_combo.findData(SEPT.year))
+    dashboard.month_combo.setCurrentIndex(SEPT.month - 1)
 
     assert dashboard.expense_label.text().endswith("RON")
     assert dashboard.breakdown_table.rowCount() >= 1
