@@ -67,7 +67,6 @@ class Product(Base):
     __tablename__ = "product"
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(250), unique=True, nullable=False)
-    brand: Mapped[Optional[str]] = mapped_column(String(100))
     unit_of_measure: Mapped[Optional[str]] = mapped_column(String(20))
     package_size: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 3))
     package_unit: Mapped[Optional[str]] = mapped_column(String(5))

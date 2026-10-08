@@ -235,7 +235,6 @@ class ProductRepository:
 
             # fill in details the kept product doesn't have yet
             for other in others:
-                keep.brand = keep.brand or other.brand
                 keep.category_id = keep.category_id or other.category_id
                 if keep.package_size is None and other.package_size and \
                         normalize_unit(keep.unit_of_measure) == normalize_unit(other.unit_of_measure) == "pcs":
