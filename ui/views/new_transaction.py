@@ -70,7 +70,7 @@ class NewTransactionView(QWidget):
 
         if not self.edit_tx_id:
             scan_layout = QHBoxLayout()
-            scan_layout.addWidget(QLabel("Scan a receipt with AI (Claude, Gemini, ...):"))
+            scan_layout.addWidget(QLabel("Fill from a receipt or online order with AI (Claude, Gemini, ...):"))
             self.copy_prompt_btn = QPushButton("1. Copy Prompt")
             self.copy_prompt_btn.clicked.connect(self.copy_scan_prompt)
             self.paste_scan_btn = QPushButton("2. Paste AI Result")
@@ -102,7 +102,7 @@ class NewTransactionView(QWidget):
         self.location_label.setVisible(False)
 
         self.receipt_number_input = QLineEdit()
-        self.receipt_number_input.setPlaceholderText("The long ID UNIC at the bottom of the receipt")
+        self.receipt_number_input.setPlaceholderText("The long ID UNIC at the bottom of the receipt, or the order number")
 
         self.payment_type_input = QComboBox()
         self.currency_input = QComboBox()
@@ -627,7 +627,9 @@ class NewTransactionView(QWidget):
         QApplication.clipboard().setText(build_prompt(stores, payment_types, products, list(categories.values())))
         self._show_scan_message(
             "Prompt copied. In Claude or Gemini, attach the receipt photo (or several for a long receipt), "
-            "paste the prompt and send it. Then copy the whole reply and click \"2. Paste AI Result\"."
+            "or for an online order a screenshot, the confirmation email or the invoice. Paste the prompt, "
+            "type any extra details at its end (such as the amount your bank charged) and send it. "
+            "Then copy the whole reply and click \"2. Paste AI Result\"."
         )
 
     def paste_scan_result(self):

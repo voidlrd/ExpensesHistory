@@ -4,7 +4,7 @@ from decimal import Decimal
 import pytest
 
 from receipt_import import (
-    ScanParseError, ScannedItem, build_prompt, merge_identical_items, parse_scan
+    EXTRA_DETAILS, ScanParseError, ScannedItem, build_prompt, merge_identical_items, parse_scan
 )
 
 GOOD = """
@@ -155,3 +155,24 @@ def test_build_prompt_lists_what_the_app_knows():
     assert "- Banane [kg, Fruit]" in prompt
     assert "- Punga [pcs, no category]" in prompt
     assert "Known categories: Fruit" in prompt
+
+
+def test_build_prompt_ends_with_room_for_extra_details():
+    prompt = build_prompt([], [], [])
+
+    assert prompt.rstrip().endswith(EXTRA_DETAILS)
+
+
+def test_parse_an_online_order():
+    scan = parse_scan("""```json
+{"store": "Steam", "date": "2026-10-05", "receipt_number": "4521 8890 1123", "currency": "EUR",
+ "payment_type": null, "total": 24.98,
+ "items": [{"name": "Hades II", "amount": 1, "unit": "pcs", "unit_price": 29.99, "discount": 5.01,
+            "refund": false, "category": "Games", "brand": null}],
+ "notes": []}
+```""")
+
+    assert scan.store == "Steam"
+    assert scan.receipt_number == "452188901123"
+    assert scan.currency == "EUR"
+    assert scan.items[0].discount == Decimal("5.01")

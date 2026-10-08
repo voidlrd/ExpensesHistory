@@ -16,22 +16,28 @@ SQLAlchemy on top of a local SQLite database.
 - Stores & People tab: search, see receipts, spending and income per store, merge duplicates, rename locations, hide or delete
 - Products tab: search and filter by category, brand and unit; manage each product's brands; set categories in bulk, hide, merge duplicates, and delete products that were never bought
 - Backups tab: every backup listed, one-click backup and restore, plus an automatic backup at startup (the 5 most recent are kept)
-- Fill a receipt from a photo using any AI chat app (Claude, Gemini, ...), with category suggestions for new products, then review and save
+- Fill a receipt from a photo, or an online order from a screenshot, email or invoice, using any AI chat app (Claude, Gemini, ...), with category suggestions for new products, then review and save
 - Warns when a receipt with the same ID UNIC was already saved
 
-## Scanning a receipt with AI
+## Filling a receipt or online order with AI
 
 1. On **New Transaction**, click **1. Copy Prompt**. The prompt includes your known
    stores, payment types and products, so the AI reuses your names.
 2. In Claude, Gemini or another AI chat, attach the receipt photo (several photos for a
-   long receipt), paste the prompt and send it.
+   long receipt), or for an online order a screenshot, the confirmation email or the
+   invoice. Paste the prompt; it ends with a line for extra details, so type anything
+   the attachment doesn't show (the amount your bank charged, the payment type, what an
+   item is) and send it. For something like a subscription you can skip the attachment
+   and write the details alone.
 3. Copy the whole reply, click **2. Paste AI Result** and then **Fill Form**.
 4. Check the message under the items: it confirms the items add up to the receipt
    total, or shows the difference, and lists new products and anything the AI was
    unsure about. Nothing is saved until you press Save.
 
 The scan also reads the brand off each line when the receipt prints one, and leaves
-it blank otherwise.
+it blank otherwise. For online orders it uses the order number as the receipt ID,
+names subscriptions without dates so every renewal lands on the same product, and
+keeps shipping and fees as their own lines.
 
 The app never contacts an AI service itself; it only reads the pasted JSON.
 

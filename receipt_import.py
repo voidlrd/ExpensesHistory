@@ -7,7 +7,7 @@ from decimal import Decimal, InvalidOperation
 from units import normalize_unit
 
 PROMPT = """
-Read the shopping receipt in the attached photo(s) and extract it for an expense tracking app.
+Read the purchase in the attachment(s) and extract it for an expense tracking app. It is either a shop receipt (photo) or an online order: a screenshot, an order confirmation email, an invoice or pasted text (for example a subscription, a game or key store, or an online shop). Use the extra details at the end of this message too; when nothing is attached, build the purchase from those details alone.
 
 Reply with ONLY one JSON code block and no other text, in exactly this shape:
 
@@ -46,7 +46,22 @@ Rules:
 - brand is the maker printed on the line (for example "Zuzu", "Napolact"), or null when the receipt doesn't show one. Keep the brand out of "name": the name stays the plain product.
 - If several photos show parts of one receipt, combine them and do not repeat lines that appear in more than one photo.
 - If something is unreadable, give your best reading or null, and say what is uncertain in "notes". Never invent products or prices.
+
+Online orders:
+- store is the shop or service you bought from (for example "eMAG", "Steam", "Humble Bundle"), not the payment processor (PayPal, Stripe, Paddle, Xsolla) and not the legal company name.
+- receipt_number is the order number, or the invoice number when there is no order number.
+- date is the order or payment date.
+- Every product, game, key, bundle or subscription is one "pcs" item. Name a subscription after its plan without dates or billing periods (for example "Claude Pro"), so each renewal lands on the same product.
+- Shipping, delivery, service and payment fees are items too.
+- Prices include VAT. When an invoice lists VAT separately, add it to the item prices so the items add up to the total paid.
+- A voucher or coupon goes in the discount of the item it applies to, or of the most expensive item when it covers the whole order. Paying with a gift card or wallet balance is not a discount.
+- currency is the currency the order was charged in. When my extra details give the amount actually charged in another currency, use that currency and amount as total, scale the item prices to add up to it, and mention the original amount in "notes".
 """.strip()
+
+EXTRA_DETAILS = (
+    "Extra details from me (optional; when given, they win over the attachment, "
+    "for example the amount my bank charged, the payment type, or what an item is):"
+)
 
 
 @dataclass
@@ -112,6 +127,8 @@ def build_prompt(stores, payment_types, products, categories=()):
         "Known products (unit and category in brackets):",
     ]
     lines += [describe(p) for p in products] or ["- none yet"]
+    # last, so the cursor lands right after it when the prompt is pasted
+    lines += ["", EXTRA_DETAILS, ""]
     return "\n".join(lines)
 
 
