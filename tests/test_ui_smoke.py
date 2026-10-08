@@ -57,12 +57,15 @@ def test_main_window_builds_every_tab(main_window):
                       "Price Tracker", "Data Manager"]
 
 
-def test_dashboard_shows_the_month(main_window):
-    dashboard = main_window.dashboard_tab
+def show_september(dashboard):
     dashboard.refresh()
-    # the dashboard opens on today's month; pin it to the test data
     dashboard.year_combo.setCurrentIndex(dashboard.year_combo.findData(SEPT.year))
     dashboard.month_combo.setCurrentIndex(SEPT.month - 1)
+
+
+def test_dashboard_shows_the_month(main_window):
+    dashboard = main_window.dashboard_tab
+    show_september(dashboard)
 
     assert dashboard.expense_label.text().endswith("RON")
     assert dashboard.breakdown_table.rowCount() >= 1
@@ -70,26 +73,22 @@ def test_dashboard_shows_the_month(main_window):
 
 def test_dashboard_covers_several_months(main_window):
     dashboard = main_window.dashboard_tab
-    dashboard.refresh()
-    dashboard.year_combo.setCurrentIndex(dashboard.year_combo.findData(SEPT.year))
-    dashboard.month_combo.setCurrentIndex(SEPT.month - 1)
+    show_september(dashboard)
 
     dashboard.span_combo.setCurrentText("3 months")
 
-    # Aug and Sept together: 9.94 + 4.50 + 3.50
     assert dashboard.expense_label.text() == "17.94 RON"
     assert dashboard.breakdown_table.rowCount() == 3
-    assert "Jul – Sep 2026" in dashboard.title_label.text()
+    assert dashboard.title_label.text().endswith("Jul 2026 – Sep 2026")
 
     dashboard.step_period(-1)
-    assert "Apr – Jun 2026" in dashboard.title_label.text()
+    assert dashboard.title_label.text().endswith("Apr 2026 – Jun 2026")
     assert dashboard.expense_label.text() == "0.00 RON"
 
 
 def test_dashboard_year_hides_the_month(main_window):
     dashboard = main_window.dashboard_tab
-    dashboard.refresh()
-    dashboard.year_combo.setCurrentIndex(dashboard.year_combo.findData(SEPT.year))
+    show_september(dashboard)
 
     dashboard.span_combo.setCurrentText("Year")
 
