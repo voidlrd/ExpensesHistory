@@ -88,6 +88,13 @@ def test_delete_transaction_removes_it(save_receipt):
     assert TransactionRepository.search_transactions() == []
 
 
+def test_defaults_come_from_the_last_receipt_entered_not_the_latest_date(save_receipt):
+    save_receipt(SEPT, "Lidl", [item("Punga", price="0.81")], currency="RON")
+    save_receipt(AUG, "Steam", [item("Game", price="9.99")], currency="EUR")
+
+    assert TransactionRepository.get_last_used_defaults()[1] == "EUR"
+
+
 # ---------- searching ----------
 
 @pytest.fixture
@@ -461,6 +468,13 @@ def test_recent_incomes_are_newest_first(save_income):
 
     recent = IncomeRepository.get_recent_incomes()
     assert [float(i.net_amount) for i in recent] == [200.0, 100.0]
+
+
+def test_income_defaults_come_from_the_last_record_entered(save_income):
+    save_income(SEPT, "Acme", "100.00", currency="RON")
+    save_income(AUG, "Acme", "50.00", currency="EUR")
+
+    assert IncomeRepository.get_last_used_defaults()[1] == "EUR"
 
 
 # ---------- reports ----------

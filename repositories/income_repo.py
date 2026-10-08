@@ -118,7 +118,7 @@ class IncomeRepository:
     def get_last_used_defaults():
         with get_session() as session:
             last_inc = session.scalar(
-                select(IncomeRecord).order_by(IncomeRecord.date.desc(), IncomeRecord.id.desc())
+                select(IncomeRecord).order_by(IncomeRecord.id.desc())
             )
             if last_inc:
                 return last_inc.payment_type_id, last_inc.currency_code

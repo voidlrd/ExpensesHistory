@@ -175,7 +175,7 @@ class TransactionRepository:
     def get_last_used_defaults():
         with get_session() as session:
             last_tx = session.scalar(
-                select(TransactionRecord).order_by(TransactionRecord.date.desc(), TransactionRecord.id.desc())
+                select(TransactionRecord).order_by(TransactionRecord.id.desc())
             )
             if last_tx:
                 return last_tx.payment_type_id, last_tx.currency_code
