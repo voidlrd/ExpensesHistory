@@ -220,7 +220,7 @@ class TransactionDetailDialog(QDialog):
             self.accept()
 
 
-class MonthLinesDialog(QDialog):
+class LinesDialog(QDialog):
     """Receipt lines behind a dashboard row; double-click opens the receipt."""
     receipts_changed = pyqtSignal()
 

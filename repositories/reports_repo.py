@@ -37,9 +37,8 @@ class ReportsRepository:
             return list(range(min_year, max_year + 1))
 
     @staticmethod
-    def get_month_summary(currency_code, year, month):
-        start_date, end_date = month_bounds(year, month)
-
+    def get_summary(currency_code, start_date, end_date):
+        """(income, expenses) between the two dates, inclusive."""
         with get_session() as session:
             expenses = session.scalar(
                 select(func.sum(TransactionRecord.total_amount))
@@ -85,10 +84,8 @@ class ReportsRepository:
                 for y, m in periods]
 
     @staticmethod
-    def get_store_breakdown(currency_code, year, month):
-        """(counterparty id, name, total) for the month, biggest first."""
-        start_date, end_date = month_bounds(year, month)
-
+    def get_store_breakdown(currency_code, start_date, end_date):
+        """(counterparty id, name, total) for the period, biggest first."""
         with get_session() as session:
             stmt = (
                 select(Counterparty.id, Counterparty.name, func.sum(TransactionRecord.total_amount).label("total"))
@@ -103,10 +100,8 @@ class ReportsRepository:
             return [(row.id, row.name, float(row.total)) for row in session.execute(stmt)]
 
     @staticmethod
-    def get_category_breakdown(currency_code, year, month):
-        """(category id or None, name, total) for the month, biggest first."""
-        start_date, end_date = month_bounds(year, month)
-
+    def get_category_breakdown(currency_code, start_date, end_date):
+        """(category id or None, name, total) for the period, biggest first."""
         with get_session() as session:
             # round each line to the cent, like the receipt and the saved totals
             line = func.round((Item.amount * Item.price) - Item.discount, 2)
@@ -127,10 +122,8 @@ class ReportsRepository:
             return [(row.id, row.name or UNCATEGORIZED, float(row.total)) for row in session.execute(stmt)]
 
     @staticmethod
-    def get_month_lines(currency_code, year, month, store_id=None, category_id=None, uncategorized=False):
-        """Receipt lines of the month, optionally for one store or category, oldest first."""
-        start_date, end_date = month_bounds(year, month)
-
+    def get_lines(currency_code, start_date, end_date, store_id=None, category_id=None, uncategorized=False):
+        """Receipt lines of the period, optionally for one store or category, oldest first."""
         with get_session() as session:
             stmt = (
                 select(Item)

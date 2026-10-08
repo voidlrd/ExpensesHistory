@@ -34,3 +34,26 @@ def test_period_range_in_january():
 
     assert period_range("Last month", today) == (date(2025, 12, 1), date(2025, 12, 31))
     assert period_range("Last 3 months", today) == (date(2025, 11, 1), date(2026, 1, 31))
+
+
+def test_dashboard_spans_end_at_the_chosen_month():
+    from ui.views.dashboard import period_months
+    today = date(2026, 10, 8)
+
+    assert period_months("Month", 2026, 9, today) == ((2026, 9), (2026, 9))
+    assert period_months("3 months", 2026, 2, today) == ((2025, 12), (2026, 2))
+    assert period_months("6 months", 2026, 10, today) == ((2026, 5), (2026, 10))
+    assert period_months("Year", 2025, 3, today) == ((2025, 1), (2025, 12))
+    # the current year runs up to this month, so last year compares like for like
+    assert period_months("Year", 2026, 3, today) == ((2026, 1), (2026, 10))
+
+
+def test_dashboard_compares_with_the_period_before():
+    from ui.views.dashboard import period_label, previous_period
+
+    assert previous_period("3 months", (2026, 8), (2026, 10)) == ((2026, 5), (2026, 7))
+    assert previous_period("Year", (2026, 1), (2026, 10)) == ((2025, 1), (2025, 10))
+    assert period_label((2026, 9), (2026, 9), long=True) == "September 2026"
+    assert period_label((2026, 8), (2026, 10)) == "Aug – Oct 2026"
+    assert period_label((2025, 11), (2026, 1)) == "Nov 2025 – Jan 2026"
+    assert period_label((2025, 1), (2025, 12)) == "2025"

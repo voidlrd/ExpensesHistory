@@ -6,17 +6,40 @@ from PyQt6.QtWidgets import (
     QComboBox, QTableWidget, QTableWidgetItem, QHeaderView
 )
 from PyQt6.QtCore import Qt
-from repositories.reports_repo import ReportsRepository, shift_month
+from PyQt6.QtGui import QColor
+from repositories.reports_repo import ReportsRepository, month_bounds, shift_month
 from repositories.reference_repo import ReferenceRepository
-from ui.views.record_dialogs import MonthLinesDialog
+from ui.views.record_dialogs import LinesDialog
 from ui.widgets import SortItem, make_stat_card, repopulate_combo
 
 INCOME_COLOR = "#4CAF50"
 EXPENSE_COLOR = "#F44336"
 SECTION_STYLE = "font-size: 16px; font-weight: bold; margin-top: 10px; margin-bottom: 5px;"
 
-def _month_label(year, month):
-    return f"{calendar.month_abbr[month]} {year}"
+# span name -> months it covers, which is also how far the arrows step
+SPANS = {"Month": 1, "3 months": 3, "6 months": 6, "Year": 12}
+
+def period_months(span, year, month, today):
+    """First and last (year, month) shown; the current year runs up to this month."""
+    if span == "Year":
+        return (year, 1), (year, today.month if year == today.year else 12)
+    return shift_month(year, month, 1 - SPANS[span]), (year, month)
+
+def previous_period(span, first, last):
+    step = SPANS[span]
+    return shift_month(*first, -step), shift_month(*last, -step)
+
+def period_label(first, last, long=False):
+    (y1, m1), (y2, m2) = first, last
+    abbr = calendar.month_abbr
+    if first == last:
+        return f"{(calendar.month_name if long else abbr)[m1]} {y1}"
+    if y1 == y2:
+        return str(y1) if (m1, m2) == (1, 12) else f"{abbr[m1]} – {abbr[m2]} {y1}"
+    return f"{abbr[m1]} {y1} – {abbr[m2]} {y2}"
+
+def period_dates(first, last):
+    return month_bounds(*first)[0], month_bounds(*last)[1]
 
 def change_text(current, previous, previous_label):
     if not previous:
@@ -40,14 +63,18 @@ class DashboardView(QWidget):
         self.title_label = QLabel("Dashboard")
         self.title_label.setStyleSheet("font-size: 24px; font-weight: bold; margin-bottom: 10px;")
 
+        self.span_combo = QComboBox()
+        self.span_combo.addItems(SPANS)
+        self.span_combo.setToolTip("Several months end at the chosen month")
+
         self.prev_btn = QPushButton("◀")
-        self.prev_btn.setToolTip("Previous month")
+        self.prev_btn.setToolTip("Previous period")
         self.prev_btn.setFixedWidth(32)
-        self.prev_btn.clicked.connect(lambda: self.step_month(-1))
+        self.prev_btn.clicked.connect(lambda: self.step_period(-1))
         self.next_btn = QPushButton("▶")
-        self.next_btn.setToolTip("Next month")
+        self.next_btn.setToolTip("Next period")
         self.next_btn.setFixedWidth(32)
-        self.next_btn.clicked.connect(lambda: self.step_month(1))
+        self.next_btn.clicked.connect(lambda: self.step_period(1))
 
         self.month_combo = QComboBox()
         for m in range(1, 13):
@@ -60,6 +87,9 @@ class DashboardView(QWidget):
 
         header_layout.addWidget(self.title_label)
         header_layout.addStretch()
+        header_layout.addWidget(QLabel("Show:"))
+        header_layout.addWidget(self.span_combo)
+        header_layout.addSpacing(10)
         header_layout.addWidget(self.prev_btn)
         header_layout.addWidget(self.month_combo)
         header_layout.addWidget(self.year_combo)
@@ -75,9 +105,9 @@ class DashboardView(QWidget):
         self.balance_label, self.balance_change = make_stat_card(cards_layout, "Net Balance", "#2196F3", subtitle=True)
         layout.addLayout(cards_layout)
 
-        trend_title = QLabel("Last 12 Months")
-        trend_title.setStyleSheet(SECTION_STYLE)
-        layout.addWidget(trend_title)
+        self.trend_title = QLabel("Last 12 Months")
+        self.trend_title.setStyleSheet(SECTION_STYLE)
+        layout.addWidget(self.trend_title)
         self.trend_plot = pg.PlotWidget()
         self.trend_plot.setBackground("transparent")
         self.trend_plot.setMinimumHeight(170)
@@ -106,6 +136,7 @@ class DashboardView(QWidget):
         hint.setStyleSheet("color: #9E9E9E;")
         layout.addWidget(hint)
 
+        self.span_combo.currentIndexChanged.connect(self.on_span_changed)
         self.month_combo.currentIndexChanged.connect(self.load_data)
         self.year_combo.currentIndexChanged.connect(self.load_data)
         self.currency_selector.currentIndexChanged.connect(self.load_data)
@@ -147,7 +178,17 @@ class DashboardView(QWidget):
         self.year_combo.setCurrentIndex(self.year_combo.findData(selected_year))
         self.year_combo.blockSignals(False)
 
-    def step_month(self, delta):
+    def on_span_changed(self):
+        # a year needs no month
+        self.month_combo.setVisible(self.span_combo.currentText() != "Year")
+        self.load_data()
+
+    def current_period(self):
+        return period_months(self.span_combo.currentText(), self.year_combo.currentData(),
+                             self.month_combo.currentData(), date.today())
+
+    def step_period(self, direction):
+        delta = direction * SPANS[self.span_combo.currentText()]
         year, month = shift_month(self.year_combo.currentData(), self.month_combo.currentData(), delta)
         self._set_years(year)
         self.month_combo.blockSignals(True)
@@ -165,12 +206,15 @@ class DashboardView(QWidget):
         if not currency or not year or not month:
             return
 
-        self.title_label.setText(f"Dashboard - {calendar.month_name[month]} {year}")
+        span = self.span_combo.currentText()
+        first, last = self.current_period()
+        start, end = period_dates(first, last)
+        self.title_label.setText(f"Dashboard · {period_label(first, last, long=True)}")
 
-        income, expenses = self.reports_repo.get_month_summary(currency, year, month)
-        prev_year, prev_month = shift_month(year, month, -1)
-        prev_income, prev_expenses = self.reports_repo.get_month_summary(currency, prev_year, prev_month)
-        prev_label = _month_label(prev_year, prev_month)
+        income, expenses = self.reports_repo.get_summary(currency, start, end)
+        prev_first, prev_last = previous_period(span, first, last)
+        prev_income, prev_expenses = self.reports_repo.get_summary(currency, *period_dates(prev_first, prev_last))
+        prev_label = period_label(prev_first, prev_last)
 
         self.income_label.setText(f"{income:,.2f} {currency}")
         self.expense_label.setText(f"{expenses:,.2f} {currency}")
@@ -179,23 +223,36 @@ class DashboardView(QWidget):
         self.expense_change.setText(change_text(expenses, prev_expenses, prev_label))
         self.balance_change.setText(f"{prev_label}: {prev_income - prev_expenses:,.2f}")
 
-        self._draw_trend(self.reports_repo.get_monthly_totals(currency, year, month))
+        if span == "Year":
+            self.trend_title.setText(f"Months of {year}")
+            trend = self.reports_repo.get_monthly_totals(currency, year, 12)
+        else:
+            self.trend_title.setText(f"12 Months to {period_label(last, last)}")
+            trend = self.reports_repo.get_monthly_totals(currency, *last)
+        self._draw_trend(trend, first, last)
 
-        stores = self.reports_repo.get_store_breakdown(currency, year, month)
+        stores = self.reports_repo.get_store_breakdown(currency, start, end)
         self._fill_breakdown(self.breakdown_table, [(("store", i), name, total) for i, name, total in stores],
                              expenses, currency)
-        categories = self.reports_repo.get_category_breakdown(currency, year, month)
+        categories = self.reports_repo.get_category_breakdown(currency, start, end)
         self._fill_breakdown(self.cat_breakdown_table, [(("category", i), name, total) for i, name, total in categories],
                              expenses, currency)
 
-    def _draw_trend(self, months):
+    def _draw_trend(self, months, first, last):
         self.trend_plot.clear()
         self.trend_legend.clear()
         xs = list(range(len(months)))
+
+        # months outside the shown period are faded
+        def brushes(color):
+            faded = QColor(color)
+            faded.setAlpha(70)
+            return [pg.mkBrush(color if first <= (m[0], m[1]) <= last else faded) for m in months]
+
         income_bars = pg.BarGraphItem(x=[x - 0.2 for x in xs], height=[m[2] for m in months], width=0.4,
-                                      brush=INCOME_COLOR, pen=None)
+                                      brush=INCOME_COLOR, brushes=brushes(INCOME_COLOR), pen=None)
         expense_bars = pg.BarGraphItem(x=[x + 0.2 for x in xs], height=[m[3] for m in months], width=0.4,
-                                       brush=EXPENSE_COLOR, pen=None)
+                                       brush=EXPENSE_COLOR, brushes=brushes(EXPENSE_COLOR), pen=None)
         self.trend_plot.addItem(income_bars)
         self.trend_plot.addItem(expense_bars)
         self.trend_legend.addItem(income_bars, "Income")
@@ -206,7 +263,7 @@ class DashboardView(QWidget):
         self.trend_plot.setXRange(-0.6, len(months) - 0.4, padding=0)
         self.trend_months = months
 
-    def _fill_breakdown(self, table, rows, month_total, currency):
+    def _fill_breakdown(self, table, rows, period_total, currency):
         table.setSortingEnabled(False)
         table.setRowCount(0)
         for row, (key, label, total) in enumerate(rows):
@@ -215,7 +272,7 @@ class DashboardView(QWidget):
             name_item.setData(Qt.ItemDataRole.UserRole, key)
             table.setItem(row, 0, name_item)
             table.setItem(row, 1, SortItem(f"{total:,.2f} {currency}", total, align_right=True))
-            share = total / month_total * 100 if month_total else 0
+            share = total / period_total * 100 if period_total else 0
             table.setItem(row, 2, SortItem(f"{share:.0f}%", share, align_right=True))
         table.setSortingEnabled(True)
 
@@ -227,18 +284,18 @@ class DashboardView(QWidget):
             return None
         kind, key = name_item.data(Qt.ItemDataRole.UserRole)
         currency = self.currency_selector.currentData()
-        year = self.year_combo.currentData()
-        month = self.month_combo.currentData()
+        first, last = self.current_period()
+        start, end = period_dates(first, last)
 
         if kind == "store":
             filters = {"store_id": key}
         else:
             filters = {"category_id": key, "uncategorized": key is None}
 
-        dialog = MonthLinesDialog(
-            f"{name_item.text()} - {calendar.month_name[month]} {year}",
+        dialog = LinesDialog(
+            f"{name_item.text()} · {period_label(first, last, long=True)}",
             currency,
-            lambda: self.reports_repo.get_month_lines(currency, year, month, **filters),
+            lambda: self.reports_repo.get_lines(currency, start, end, **filters),
             self
         )
         dialog.receipts_changed.connect(self.load_data)

@@ -10,7 +10,7 @@ SQLAlchemy on top of a local SQLite database.
 - Track income alongside expenses, in multiple currencies, with a duplicate warning and the last few records in view
 - Edit or delete any saved transaction or income record
 - History: period presets, live filters, search by store, receipt ID or product, and totals for what's shown
-- Dashboard: step through months, see income and expenses against the previous month and over the last 12 months, and open any store or category to see what you bought
+- Dashboard: show a month, 3 or 6 months, or a year (the current year runs up to this month), step through periods, compare income and expenses with the period before, see the last 12 months with the shown period highlighted, and open any store or category to see what you bought
 - Brands per product: "Lapte" keeps its own list of brands the way a store keeps locations, so names stay clean. A brand is optional on every purchase, blank when you don't know it, and renaming one fixes every past purchase
 - Price tracker: searchable product list, effective unit price history per currency with a chart, a brand filter, and the average price per store and per brand
 - Stores & People tab: search, see receipts, spending and income per store, merge duplicates, rename locations, hide or delete

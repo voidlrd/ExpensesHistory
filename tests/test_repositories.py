@@ -7,11 +7,12 @@ from conftest import item
 from repositories.income_repo import IncomeRepository
 from repositories.product_repo import ProductRepository
 from repositories.reference_repo import ReferenceRepository
-from repositories.reports_repo import ReportsRepository
+from repositories.reports_repo import ReportsRepository, month_bounds
 from repositories.transaction_repo import TransactionRepository
 
 SEPT = date(2026, 9, 14)
 AUG = date(2026, 8, 14)
+SEPT_BOUNDS = month_bounds(2026, 9)
 
 
 def store_id(name):
@@ -491,25 +492,32 @@ def month_of_data(save_receipt, save_income):
 
 
 def test_month_summary(month_of_data):
-    income, expenses = ReportsRepository.get_month_summary("RON", 2026, 9)
+    income, expenses = ReportsRepository.get_summary("RON", *SEPT_BOUNDS)
 
     assert income == pytest.approx(1000.00)
     assert expenses == pytest.approx(13.44)
 
 
 def test_store_breakdown_is_biggest_first(month_of_data):
-    breakdown = ReportsRepository.get_store_breakdown("RON", 2026, 9)
+    breakdown = ReportsRepository.get_store_breakdown("RON", *SEPT_BOUNDS)
 
     assert [name for _, name, _ in breakdown] == ["Lidl", "Dabo"]
     assert breakdown[0][2] == pytest.approx(9.94)
 
 
 def test_category_breakdown_adds_up_to_the_month(month_of_data):
-    _, expenses = ReportsRepository.get_month_summary("RON", 2026, 9)
-    breakdown = ReportsRepository.get_category_breakdown("RON", 2026, 9)
+    _, expenses = ReportsRepository.get_summary("RON", *SEPT_BOUNDS)
+    breakdown = ReportsRepository.get_category_breakdown("RON", *SEPT_BOUNDS)
 
     assert sum(total for _, _, total in breakdown) == pytest.approx(expenses)
     assert {name for _, name, _ in breakdown} == {"Fruit", "Pastry", "Uncategorized"}
+
+
+def test_summary_spans_several_months(month_of_data):
+    income, expenses = ReportsRepository.get_summary("RON", date(2026, 8, 1), date(2026, 9, 30))
+
+    assert income == pytest.approx(1000.00)
+    assert expenses == pytest.approx(13.44 + 5.49)
 
 
 def test_monthly_totals_cover_every_month_in_the_window(month_of_data):
@@ -521,9 +529,9 @@ def test_monthly_totals_cover_every_month_in_the_window(month_of_data):
 
 
 def test_month_lines_can_be_filtered(month_of_data):
-    all_lines = ReportsRepository.get_month_lines("RON", 2026, 9)
-    lidl = ReportsRepository.get_month_lines("RON", 2026, 9, store_id=store_id("Lidl"))
-    uncategorized = ReportsRepository.get_month_lines("RON", 2026, 9, uncategorized=True)
+    all_lines = ReportsRepository.get_lines("RON", *SEPT_BOUNDS)
+    lidl = ReportsRepository.get_lines("RON", *SEPT_BOUNDS, store_id=store_id("Lidl"))
+    uncategorized = ReportsRepository.get_lines("RON", *SEPT_BOUNDS, uncategorized=True)
 
     assert len(all_lines) == 3
     assert len(lidl) == 2
