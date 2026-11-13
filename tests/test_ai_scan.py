@@ -1,65 +1,11 @@
-import json
 import threading
-import time
 
 import pytest
-from PyQt6.QtCore import QBuffer, QByteArray, QIODevice, Qt
-from PyQt6.QtGui import QImage
-from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox
+from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
 import app_settings
-from conftest import wait_until
-from receipt_ai import AIError, Claude, Gemini, scan_receipt
-
-REPLY = "```json\n" + json.dumps({
-    "store": "Lidl", "date": "2026-09-14", "receipt_number": "999 111", "currency": "RON",
-    "payment_type": None, "total": 12.49,
-    "items": [
-        {"name": "Banane", "amount": 1, "unit": "kg", "unit_price": 8.99, "discount": 0, "refund": False},
-        {"name": "Paine", "amount": 1, "unit": "pcs", "unit_price": 3.50, "discount": 0, "refund": False},
-    ],
-    "notes": [],
-}) + "\n```"
-
-
-def pump_events(seconds):
-    deadline = time.monotonic() + seconds
-    while time.monotonic() < deadline:
-        QApplication.processEvents()
-        time.sleep(0.01)
-
-
-def png_bytes(width=300, height=400):
-    image = QImage(width, height, QImage.Format.Format_RGB32)
-    image.fill(Qt.GlobalColor.white)
-    data = QByteArray()
-    buffer = QBuffer(data)
-    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
-    image.save(buffer, "PNG")
-    return bytes(data)
-
-
-@pytest.fixture
-def asks(monkeypatch):
-    """Stands in for the providers: records each request and answers with .reply (or raises .error)."""
-    class Asks:
-        calls = []
-        reply = REPLY
-        error = None
-        gate = None
-
-    def ask(self, model, prompt, images):
-        Asks.calls.append({"provider": self.name, "model": model, "prompt": prompt, "images": images})
-        if Asks.gate:
-            Asks.gate.wait(5)
-        if Asks.error:
-            raise Asks.error
-        return Asks.reply
-
-    Asks.calls = []
-    monkeypatch.setattr(Claude, "ask", ask)
-    monkeypatch.setattr(Gemini, "ask", ask)
-    return Asks
+from conftest import filled_products, png_bytes, pump_events, wait_until
+from receipt_ai import AIError, scan_receipt
 
 
 # ---------- scan_receipt ----------
@@ -85,22 +31,11 @@ def test_an_unusable_answer_is_explained_and_logged(qapp, asks, caplog):
 # ---------- New Transaction ----------
 
 @pytest.fixture
-def form(qt_env):
-    from ui.views.new_transaction import NewTransactionView
-    return NewTransactionView()
-
-
-@pytest.fixture
 def photo(tmp_path, monkeypatch, qapp):
     path = tmp_path / "receipt.png"
     path.write_bytes(png_bytes())
     monkeypatch.setattr(QFileDialog, "getOpenFileNames", staticmethod(lambda *a, **k: ([str(path)], "")))
     return path
-
-
-def filled_products(form):
-    from ui.views.new_transaction import COL_PRODUCT
-    return [form._cell(r, COL_PRODUCT).currentText() for r in range(form.items_table.rowCount())]
 
 
 def test_scan_without_a_key_points_to_the_settings(form, asks, photo):

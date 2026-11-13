@@ -200,5 +200,6 @@ pyrightconfig.json
 *.db-wal
 *.db-shm
 backups/
+inbox/
 project_dump.txt
 dump.py

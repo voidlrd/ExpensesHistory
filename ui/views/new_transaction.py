@@ -19,6 +19,8 @@ from units import UNITS, normalize_unit
 from receipt_ai import PROVIDERS, SETTINGS_HINT, AIError, scan_receipt
 from receipt_images import ImageError
 from receipt_import import build_prompt, merge_identical_items
+from receipt_inbox import list_receipts, remove_receipt
+from ui.views.inbox_dialog import InboxDialog
 from ui.views.scan_dialog import ScanPasteDialog
 
 (COL_PRODUCT, COL_BRAND, COL_OVERRIDE, COL_AMOUNT, COL_UNIT, COL_PRICE,
@@ -54,6 +56,7 @@ class NewTransactionView(QWidget):
         self.scan_categories = {}
         self.raw_total = Decimal(0)
         self._scan_task = None
+        self.inbox_receipt = None
 
         self._dup_timer = QTimer(self)
         self._dup_timer.setSingleShot(True)
@@ -85,7 +88,11 @@ class NewTransactionView(QWidget):
             self.scan_details_input = QLineEdit()
             self.scan_details_input.setPlaceholderText(
                 "Extra details for the AI (optional), e.g. the amount your bank charged")
+            self.inbox_btn = QPushButton("Inbox (0)")
+            self.inbox_btn.setToolTip("Receipts sent from your phone wait here")
+            self.inbox_btn.clicked.connect(self.open_inbox)
             ai_layout.addWidget(self.scan_ai_btn)
+            ai_layout.addWidget(self.inbox_btn)
             ai_layout.addWidget(self.scan_details_input, 1)
             layout.addLayout(ai_layout)
 
@@ -256,6 +263,8 @@ class NewTransactionView(QWidget):
 
         if curr_cp:
             self.counterparty_input.setCurrentText(curr_cp)
+        if not self.edit_tx_id:
+            self.refresh_inbox()
 
     def load_transaction(self, tx_id):
         tx = TransactionRepository.get_transaction_with_items(tx_id)
@@ -623,11 +632,14 @@ class NewTransactionView(QWidget):
                 self.transaction_saved.emit()
             else:
                 TransactionRepository.save_transaction(**details)
+                from_inbox = self.inbox_receipt is not None
+                if from_inbox:
+                    remove_receipt(self.inbox_receipt)
                 self.transaction_saved.emit()
                 self.reset_form()
                 show_status(self.status_label,
                             f"✓ Saved {counterparty_name}: {saved_total:.2f} {details['currency_code']} "
-                            f"· {len(items_data)} item(s)")
+                            f"· {len(items_data)} item(s)" + (" · cleared from the inbox" if from_inbox else ""))
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save transaction:\n{str(e)}")
 
@@ -671,29 +683,47 @@ class NewTransactionView(QWidget):
         return not self._has_items() or ask_yes_no(
             self, "Replace Items?", "The form already has items. Replace them with the scanned receipt?")
 
+    def _ai_ready(self):
+        if api_key(ai_provider()):
+            return True
+        self._show_scan_message(
+            f"Set up AI reading first: in {SETTINGS_HINT}, choose Claude or Gemini and save an API key.", "warn")
+        return False
+
     def scan_with_ai(self):
         if self._scan_task is not None:
             self._end_scan()
             self._show_scan_message("Scan cancelled. Nothing was changed.")
             return
-
-        provider = ai_provider()
-        key = api_key(provider)
-        if not key:
-            self._show_scan_message(
-                f"Set up AI reading first: in {SETTINGS_HINT}, choose Claude or Gemini and save an API key.", "warn")
+        if not self._ai_ready():
             return
 
         settings = app_settings()
         paths, _ = QFileDialog.getOpenFileNames(
             self, "Choose the receipt photos or screenshots", settings.value("ai/photo_folder", ""), PHOTO_FILTER)
-        if not paths or not self._confirm_replace():
+        if not paths:
             return
         settings.setValue("ai/photo_folder", str(Path(paths[0]).parent))
+        self._start_scan(paths)
 
-        model = ai_model(provider)
+    def refresh_inbox(self):
+        count = len(list_receipts())
+        self.inbox_btn.setText(f"Inbox ({count})")
+        self.inbox_btn.setEnabled(count > 0 and self._scan_task is None)
+
+    def open_inbox(self):
+        dialog = InboxDialog(self)
+        dialog.exec()
+        self.refresh_inbox()
+        if dialog.chosen is not None and self._ai_ready():
+            self._start_scan(dialog.chosen.photos, dialog.chosen)
+
+    def _start_scan(self, paths, inbox_receipt=None):
+        if not self._confirm_replace():
+            return
+        provider = ai_provider()
+        key, model = api_key(provider), ai_model(provider)
         prompt = self._scan_prompt() + self.scan_details_input.text().strip()
-        self.scan_ai_btn.setText("Cancel Scan")
         self._show_scan_message(f"Reading {len(paths)} picture(s) with {PROVIDERS[provider].name} ({model}). "
                                 "This can take a minute…")
 
@@ -701,19 +731,22 @@ class NewTransactionView(QWidget):
             return scan_receipt(provider, key, model, prompt, [Path(p).read_bytes() for p in paths])
 
         # a cancelled or replaced scan's late answer is ignored
-        task = run_in_background(self, work, lambda scan: self._scan_done(task, scan),
+        task = run_in_background(self, work, lambda scan: self._scan_done(task, scan, inbox_receipt),
                                  lambda error: self._scan_failed(task, error))
         self._scan_task = task
+        self.scan_ai_btn.setText("Cancel Scan")
+        self.inbox_btn.setEnabled(False)
 
     def _end_scan(self):
         self._scan_task = None
         self.scan_ai_btn.setText(SCAN_BUTTON_TEXT)
+        self.refresh_inbox()
 
-    def _scan_done(self, task, scan):
+    def _scan_done(self, task, scan, inbox_receipt):
         if task is not self._scan_task:
             return
         self._end_scan()
-        self.apply_scan(scan, ask_replace=False)
+        self.apply_scan(scan, ask_replace=False, inbox_receipt=inbox_receipt)
 
     def _scan_failed(self, task, error):
         if task is not self._scan_task:
@@ -724,10 +757,12 @@ class NewTransactionView(QWidget):
             error = f"Something went wrong: {error}"
         self._show_scan_message(str(error), "warn")
 
-    def apply_scan(self, scan, ask_replace=True):
+    def apply_scan(self, scan, ask_replace=True, inbox_receipt=None):
         if ask_replace and not self._confirm_replace():
             return
 
+        # saving this form clears that receipt from the inbox
+        self.inbox_receipt = inbox_receipt
         notes = list(scan.notes)
         self.scan_categories = {}
         self._fill_scan_header(scan, notes)
@@ -824,6 +859,7 @@ class NewTransactionView(QWidget):
     def reset_form(self):
         self.receipt_number_input.clear()
         self.scan_details_input.clear()
+        self.inbox_receipt = None
         self.scan_summary.setVisible(False)
         self.scan_categories = {}
         self.items_table.setRowCount(0)
