@@ -10,6 +10,7 @@ dependencies = [
     "keyring>=25.7.0",
     "pyqt6>=6.11.0",
     "pyqtgraph>=0.14.0",
+    "segno>=1.6.6",
     "sqlalchemy>=2.0.52",
 ]
 

@@ -53,6 +53,14 @@ def scratch_inbox(tmp_path, monkeypatch):
     return receipt_inbox.INBOX_DIR
 
 
+@pytest.fixture(autouse=True)
+def loopback_phone_server(monkeypatch):
+    """The phone page listens on this computer only, so tests never trigger a firewall prompt."""
+    import phone_server
+
+    monkeypatch.setattr(phone_server, "LISTEN_ADDRESS", "127.0.0.1")
+
+
 def wait_until(condition, timeout=5):
     """Pump Qt events until condition() holds, so background work can report back."""
     from PyQt6.QtWidgets import QApplication

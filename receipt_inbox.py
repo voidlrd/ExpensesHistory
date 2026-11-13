@@ -19,14 +19,15 @@ class InboxReceipt:
     photos: list
 
 
-def _extension(data):
+def picture_extension(data):
+    """File extension for a JPEG, PNG or WebP picture, None for anything else."""
     if data.startswith(b"\xff\xd8"):
         return ".jpg"
     if data.startswith(b"\x89PNG"):
         return ".png"
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return ".webp"
-    return ".img"
+    return None
 
 
 def _photo_order(path):
@@ -42,7 +43,7 @@ def add_receipt(photos):
     incoming = INBOX_DIR / (INCOMING + name)
     incoming.mkdir()
     for number, data in enumerate(photos, start=1):
-        (incoming / f"{number}{_extension(data)}").write_bytes(data)
+        (incoming / f"{number}{picture_extension(data) or '.img'}").write_bytes(data)
     folder = incoming.rename(INBOX_DIR / name)
     return _read(folder)
 

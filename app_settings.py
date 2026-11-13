@@ -1,3 +1,5 @@
+import secrets
+
 import keyring
 from keyring.errors import PasswordDeleteError
 from PyQt6.QtCore import QSettings
@@ -9,6 +11,7 @@ APPLICATION = "ExpenseTracker"
 # API keys live in Windows Credential Manager, never in the database or its backups
 KEYRING_SERVICE = "ExpensesHistory AI"
 DEFAULT_PROVIDER = "claude"
+DEFAULT_PHONE_PORT = 8765
 
 
 def app_settings():
@@ -46,3 +49,31 @@ def remove_api_key(provider):
         keyring.delete_password(KEYRING_SERVICE, provider)
     except PasswordDeleteError:
         pass
+
+
+def phone_enabled():
+    return app_settings().value("phone/enabled", False, type=bool)
+
+
+def set_phone_enabled(enabled):
+    app_settings().setValue("phone/enabled", enabled)
+
+
+def phone_port():
+    return app_settings().value("phone/port", DEFAULT_PHONE_PORT, type=int)
+
+
+def set_phone_port(port):
+    app_settings().setValue("phone/port", port)
+
+
+def phone_token():
+    """The secret part of the phone page's address; kept so a bookmark keeps working."""
+    token = app_settings().value("phone/token", "")
+    return token or new_phone_token()
+
+
+def new_phone_token():
+    token = secrets.token_urlsafe(12)
+    app_settings().setValue("phone/token", token)
+    return token

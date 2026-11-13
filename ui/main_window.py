@@ -1,5 +1,7 @@
 from PyQt6.QtWidgets import QMainWindow, QTabWidget
-from app_settings import app_settings
+from app_logging import log
+from app_settings import app_settings, phone_enabled
+from ui.phone_link import PhoneLink
 from ui.views.dashboard import DashboardView
 from ui.views.new_transaction import NewTransactionView
 from ui.views.new_income import NewIncomeView
@@ -17,12 +19,20 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.setCentralWidget(self.tabs)
 
+        # started before the tabs so the AI & Phone tab shows whether it runs
+        self.phone_link = PhoneLink(self)
+        if phone_enabled():
+            try:
+                self.phone_link.start()
+            except OSError:
+                log.exception("the phone page couldn't start")
+
         self.dashboard_tab = DashboardView()
         self.new_transaction_tab = NewTransactionView()
         self.new_income_tab = NewIncomeView()
         self.history_tab = TransactionListView()
         self.price_tracker_tab = PriceTrackerView()
-        self.data_manager_tab = DataManagerView()
+        self.data_manager_tab = DataManagerView(self.phone_link)
 
         # (widget, title, refresh callback run when the tab is opened)
         self.pages = [
@@ -40,6 +50,7 @@ class MainWindow(QMainWindow):
         self.tabs.currentChanged.connect(self.on_tab_changed)
         self.data_manager_tab.show_price_history.connect(self.open_price_history)
         self.data_manager_tab.database_restored.connect(self.refresh_all)
+        self.phone_link.receipt_received.connect(self.new_transaction_tab.refresh_inbox)
 
         self._restore_window_state()
 
@@ -70,4 +81,5 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         self.settings.setValue("geometry", self.saveGeometry())
         self.settings.setValue("tab", self.tabs.currentIndex())
+        self.phone_link.stop()
         super().closeEvent(event)

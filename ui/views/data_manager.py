@@ -32,10 +32,11 @@ class DataManagerView(QWidget):
     database_restored = pyqtSignal()
     show_price_history = pyqtSignal(int)
 
-    def __init__(self):
+    def __init__(self, phone_link=None):
         super().__init__()
         self.ref_repo = ReferenceRepository()
         self.overview = []
+        self.phone_link = phone_link
         self.setup_ui()
         self.load_data()
 
@@ -50,7 +51,7 @@ class DataManagerView(QWidget):
         self.tabs.addTab(self.products_panel, "Products")
 
         self.tabs.addTab(self._build_currency_tab(), "Currencies")
-        self.ai_panel = AIPanel()
+        self.ai_panel = AIPanel(self.phone_link)
         self.tabs.addTab(self.ai_panel, "AI & Phone")
         self.tabs.addTab(self._build_backup_tab(), "Backups")
 
