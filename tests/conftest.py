@@ -1,13 +1,57 @@
 import os
 import tempfile
+import time
 from pathlib import Path
 
 import pytest
+from keyring.backend import KeyringBackend
+from keyring.errors import PasswordDeleteError
 
 # point the app at a throwaway database before anything imports the engine
 TEST_DB = Path(tempfile.gettempdir()) / "expenses_history_tests.db"
 os.environ["EXPENSES_DB"] = str(TEST_DB)
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+
+class MemoryKeyring(KeyringBackend):
+    priority = 1
+
+    def __init__(self):
+        super().__init__()
+        self.passwords = {}
+
+    def get_password(self, service, username):
+        return self.passwords.get((service, username))
+
+    def set_password(self, service, username, password):
+        self.passwords[(service, username)] = password
+
+    def delete_password(self, service, username):
+        if self.passwords.pop((service, username), None) is None:
+            raise PasswordDeleteError(username)
+
+
+@pytest.fixture(autouse=True)
+def fake_keyring():
+    """API keys go to a dict, never to the real Windows Credential Manager."""
+    import keyring
+
+    previous = keyring.get_keyring()
+    backend = MemoryKeyring()
+    keyring.set_keyring(backend)
+    yield backend
+    keyring.set_keyring(previous)
+
+
+def wait_until(condition, timeout=5):
+    """Pump Qt events until condition() holds, so background work can report back."""
+    from PyQt6.QtWidgets import QApplication
+
+    deadline = time.monotonic() + timeout
+    while not condition():
+        assert time.monotonic() < deadline, "timed out waiting"
+        QApplication.processEvents()
+        time.sleep(0.01)
 
 
 @pytest.fixture

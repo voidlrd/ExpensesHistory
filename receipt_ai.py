@@ -38,6 +38,7 @@ def _offline(name):
 
 class Claude:
     name = "Claude"
+    key_page = "https://platform.claude.com/settings/keys"
     models = ("claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5")
     # if the model declines, the API retries on this one, never on something stronger
     fallbacks = {"claude-sonnet-5-5": "claude-sonnet-5"}
@@ -94,6 +95,7 @@ class Claude:
 
 class Gemini:
     name = "Gemini"
+    key_page = "https://aistudio.google.com/apikey"
     models = ("gemini-4-hydrogen", "gemini-4-argon", "gemini-4-carbon", "gemini-3.5-flash-lite")
 
     def __init__(self, api_key, http_client=None):

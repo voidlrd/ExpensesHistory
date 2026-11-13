@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from repositories.names import fold_text
 from repositories.reference_repo import ReferenceRepository
 from database import backup
+from ui.views.ai_panel import AIPanel
 from ui.views.products_panel import ProductsPanel
 from ui.widgets import SortItem, ask_yes_no, repopulate_combo, show_status
 
@@ -49,6 +50,8 @@ class DataManagerView(QWidget):
         self.tabs.addTab(self.products_panel, "Products")
 
         self.tabs.addTab(self._build_currency_tab(), "Currencies")
+        self.ai_panel = AIPanel()
+        self.tabs.addTab(self.ai_panel, "AI & Phone")
         self.tabs.addTab(self._build_backup_tab(), "Backups")
 
         main_layout.addWidget(self.tabs)

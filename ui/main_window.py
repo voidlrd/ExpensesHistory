@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import QMainWindow, QTabWidget
-from PyQt6.QtCore import QSettings
+from app_settings import app_settings
 from ui.views.dashboard import DashboardView
 from ui.views.new_transaction import NewTransactionView
 from ui.views.new_income import NewIncomeView
@@ -12,7 +12,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Expense Tracker")
         self.resize(1024, 768)
-        self.settings = QSettings("ExpensesHistory", "ExpenseTracker")
+        self.settings = app_settings()
 
         self.tabs = QTabWidget()
         self.setCentralWidget(self.tabs)

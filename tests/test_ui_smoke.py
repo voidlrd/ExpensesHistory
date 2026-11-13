@@ -2,8 +2,9 @@
 from datetime import date
 
 import pytest
-from PyQt6.QtCore import QDate, QItemSelectionModel, QSettings
+from PyQt6.QtCore import QDate, QItemSelectionModel
 
+from app_settings import app_settings
 from conftest import item
 from repositories.product_repo import ProductRepository
 from repositories.reference_repo import ReferenceRepository
@@ -475,7 +476,8 @@ def test_window_remembers_its_size_and_tab(main_window):
     main_window.resize(700, 500)
     main_window.close()
 
-    settings = QSettings("ExpensesHistory", "ExpenseTracker")
+    settings = app_settings()
+    assert settings.fileName().endswith(".ini")  # the scratch copy, not the real registry
     assert settings.value("tab", 0, type=int) == 3
     assert settings.value("geometry") is not None
 

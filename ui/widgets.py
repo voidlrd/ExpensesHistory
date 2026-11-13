@@ -1,10 +1,39 @@
+import threading
+
 from PyQt6.QtWidgets import (
     QDoubleSpinBox, QFrame, QLabel, QMessageBox, QTableWidgetItem, QVBoxLayout, QWidget
 )
 from PyQt6.QtGui import QColor, QPainter, QPen
-from PyQt6.QtCore import QEvent, Qt, QTimer
+from PyQt6.QtCore import QEvent, QObject, Qt, QTimer, pyqtSignal
 
 STATUS_COLORS = {"ok": "#4CAF50", "info": "#2196F3", "warn": "#F44336"}
+
+
+class _BackgroundTask(QObject):
+    done = pyqtSignal(object)
+    failed = pyqtSignal(object)
+
+
+def run_in_background(parent, work, on_done, on_failed):
+    """Run work() on a worker thread; on_done(result) or on_failed(error) then runs on the UI thread."""
+    task = _BackgroundTask(parent)
+    task.done.connect(on_done)
+    task.failed.connect(on_failed)
+    task.done.connect(task.deleteLater)
+    task.failed.connect(task.deleteLater)
+
+    def run():
+        try:
+            outcome, value = task.done, work()
+        except Exception as e:
+            outcome, value = task.failed, e
+        try:
+            outcome.emit(value)
+        except RuntimeError:
+            pass  # the window closed meanwhile
+
+    threading.Thread(target=run, daemon=True).start()
+    return task
 
 
 def show_status(label, text, kind="ok", seconds=8):
