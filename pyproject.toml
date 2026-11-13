@@ -2,9 +2,11 @@
 name = "expenseshistory"
 version = "0.1.0"
 description = "Desktop expense and income tracker (PyQt6 + SQLite)"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 readme = "README.md"
 dependencies = [
+    "anthropic>=2.8.0",
+    "google-genai>=3.3.0",
     "pyqt6>=6.11.0",
     "pyqtgraph>=0.14.0",
     "sqlalchemy>=2.0.52",
@@ -27,3 +29,5 @@ url = "https://pypi.org/simple"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+# google-genai's own docstrings
+filterwarnings = ["ignore:.*invalid escape sequence:SyntaxWarning"]
