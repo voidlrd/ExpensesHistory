@@ -38,9 +38,9 @@ def _offline(name):
 
 class Claude:
     name = "Claude"
-    models = ("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5")
-    # if a model declines, the API retries on another one; Haiku has no such fallback
-    fallback_models = {"claude-opus-5-5", "claude-sonnet-5-5"}
+    models = ("claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5")
+    # if the model declines, the API retries on this one, never on something stronger
+    fallbacks = {"claude-sonnet-5-5": "claude-sonnet-5"}
 
     def __init__(self, api_key, http_client=None):
         self.client = anthropic.Anthropic(api_key=api_key, timeout=TIMEOUT_SECONDS, http_client=http_client)
@@ -78,9 +78,10 @@ class Claude:
         request = {"model": model, "max_tokens": MAX_TOKENS, "messages": [{"role": "user", "content": content}]}
 
         with self._errors(model):
-            if model in self.fallback_models:
+            if model in self.fallbacks:
                 response = self.client.beta.messages.create(
-                    betas=["server-side-fallback-2026-07-01"], fallbacks="default", **request)
+                    betas=["server-side-fallback-2026-07-01"],
+                    fallbacks=[{"model": self.fallbacks[model]}], **request)
             else:
                 response = self.client.messages.create(**request)
 

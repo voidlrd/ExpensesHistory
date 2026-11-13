@@ -64,14 +64,19 @@ def test_claude_sends_images_before_the_prompt_and_returns_the_text():
     assert content[-1]["text"] == "Read this"
 
 
-def test_claude_opus_falls_back_on_the_server_but_haiku_does_not():
+def test_sonnet_falls_back_only_to_the_older_sonnet():
     server = Recorder(body=claude_message())
-    Claude("key", server.client()).ask("claude-opus-5-5", "p", [b"x"])
-    assert server.sent()["fallbacks"] == "default"
+    Claude("key", server.client()).ask("claude-sonnet-5-5", "p", [b"x"])
+    assert server.sent()["fallbacks"] == [{"model": "claude-sonnet-5"}]
     assert "server-side-fallback" in server.requests[-1].headers["anthropic-beta"]
 
-    Claude("key", server.client()).ask("claude-haiku-5-5", "p", [b"x"])
-    assert "fallbacks" not in server.sent()
+    for model in ("claude-haiku-5-5", "claude-opus-5-5"):
+        Claude("key", server.client()).ask(model, "p", [b"x"])
+        assert "fallbacks" not in server.sent()
+
+
+def test_sonnet_is_the_default_claude_model():
+    assert Claude.models[0] == "claude-sonnet-5-5"
 
 
 @pytest.mark.parametrize("status, body, expected", [
