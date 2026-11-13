@@ -48,7 +48,9 @@ goes wrong, the AI's answer is written to the log file.
 3. Scan the code with the phone's camera and bookmark the page. The phone must be on the
    same Wi-Fi.
 4. On the page, take the photo (or several parts of a long receipt, top to bottom), or pick
-   screenshots from the gallery, and press **Send**.
+   screenshots from the gallery. Press **Next receipt** and photograph the next one, and so
+   on; then press **Send all**. The batch is kept on the phone until it is sent, even if
+   the page reloads, and a receipt that fails to send stays there to try again.
 5. On **New Transaction**, **Inbox** shows how many receipts are waiting. Open it, pick one
    and scan it. It leaves the inbox once you save its transaction.
 

@@ -77,7 +77,7 @@ def server():
 def test_the_page_needs_the_token(server):
     status, body = fetch(local_url(server.port, "secret-token"))
     assert status == 200
-    assert b"Send a receipt" in body
+    assert b"Send receipts" in body
 
     assert fetch(local_url(server.port, "secret-token/"))[0] == 200
     assert fetch(local_url(server.port, "wrong"))[0] == 404
