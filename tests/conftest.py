@@ -138,7 +138,7 @@ def popups(monkeypatch):
     Also cancels input dialogs by default, so an unstubbed one returns instead of
     blocking. A test that needs an answer monkeypatches it again.
     """
-    from PyQt6.QtWidgets import QInputDialog, QMessageBox
+    from PyQt6.QtWidgets import QFileDialog, QInputDialog, QMessageBox
 
     seen = []
 
@@ -155,4 +155,5 @@ def popups(monkeypatch):
                         staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes))
     monkeypatch.setattr(QInputDialog, "getText", staticmethod(lambda *a, **k: ("", False)))
     monkeypatch.setattr(QInputDialog, "getItem", staticmethod(lambda *a, **k: ("", False)))
+    monkeypatch.setattr(QFileDialog, "getOpenFileNames", staticmethod(lambda *a, **k: ([], "")))
     return seen

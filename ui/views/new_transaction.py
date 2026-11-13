@@ -2,17 +2,22 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLineEdit, QComboBox, QDateEdit, QPushButton,
     QTableWidget, QHeaderView, QLabel, QDoubleSpinBox,
-    QMessageBox, QCompleter, QCheckBox, QApplication
+    QMessageBox, QCompleter, QCheckBox, QApplication, QFileDialog
 )
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtCore import QDate, Qt, QTimer, pyqtSignal
 from dataclasses import replace
 from decimal import Decimal
+from pathlib import Path
+from app_logging import log
+from app_settings import ai_model, ai_provider, api_key, app_settings
 from repositories.reference_repo import ReferenceRepository
 from repositories.product_repo import ProductRepository
 from repositories.transaction_repo import TransactionRepository, line_total
-from ui.widgets import RowOutline, TrimmedDoubleSpinBox, ask_yes_no, repopulate_combo, show_status
+from ui.widgets import RowOutline, TrimmedDoubleSpinBox, ask_yes_no, repopulate_combo, run_in_background, show_status
 from units import UNITS, normalize_unit
+from receipt_ai import PROVIDERS, SETTINGS_HINT, AIError, scan_receipt
+from receipt_images import ImageError
 from receipt_import import build_prompt, merge_identical_items
 from ui.views.scan_dialog import ScanPasteDialog
 
@@ -20,6 +25,8 @@ from ui.views.scan_dialog import ScanPasteDialog
  COL_DISCOUNT, COL_REFUND, COL_TOTAL, COL_DELETE) = range(10)
 
 DUPLICATE_TEXT = "⚠️ Duplicate Detected!"
+SCAN_BUTTON_TEXT = "Scan with AI…"
+PHOTO_FILTER = "Pictures (*.jpg *.jpeg *.png *.webp)"
 
 class FastTabSpinBox(QDoubleSpinBox):
     def __init__(self, add_row_callback, *args, **kwargs):
@@ -46,6 +53,7 @@ class NewTransactionView(QWidget):
         self.brand_index = {}
         self.scan_categories = {}
         self.raw_total = Decimal(0)
+        self._scan_task = None
 
         self._dup_timer = QTimer(self)
         self._dup_timer.setSingleShot(True)
@@ -69,8 +77,20 @@ class NewTransactionView(QWidget):
         layout = QVBoxLayout(self)
 
         if not self.edit_tx_id:
+            ai_layout = QHBoxLayout()
+            self.scan_ai_btn = QPushButton(SCAN_BUTTON_TEXT)
+            self.scan_ai_btn.setStyleSheet("background-color: #2196F3; color: white; padding: 4px 12px;")
+            self.scan_ai_btn.setToolTip(f"Pick receipt photos or screenshots; the AI set up in {SETTINGS_HINT} reads them")
+            self.scan_ai_btn.clicked.connect(self.scan_with_ai)
+            self.scan_details_input = QLineEdit()
+            self.scan_details_input.setPlaceholderText(
+                "Extra details for the AI (optional), e.g. the amount your bank charged")
+            ai_layout.addWidget(self.scan_ai_btn)
+            ai_layout.addWidget(self.scan_details_input, 1)
+            layout.addLayout(ai_layout)
+
             scan_layout = QHBoxLayout()
-            scan_layout.addWidget(QLabel("Fill from a receipt or online order with AI (Claude, Gemini, ...):"))
+            scan_layout.addWidget(QLabel("Or use any AI chat yourself (Claude, Gemini, ...):"))
             self.copy_prompt_btn = QPushButton("1. Copy Prompt")
             self.copy_prompt_btn.clicked.connect(self.copy_scan_prompt)
             self.paste_scan_btn = QPushButton("2. Paste AI Result")
@@ -619,12 +639,15 @@ class NewTransactionView(QWidget):
         self.scan_summary.setText(text)
         self.scan_summary.setVisible(True)
 
-    def copy_scan_prompt(self):
+    def _scan_prompt(self):
         stores = [cp.name for cp in self.ref_repo.get_all_counterparties()]
         payment_types = [self.payment_type_input.itemText(i) for i in range(self.payment_type_input.count())]
         categories = {c.id: c.name for c in self.ref_repo.get_all_item_categories()}
         products = [(p.name, normalize_unit(p.unit_of_measure), categories.get(p.category_id)) for p in self.products]
-        QApplication.clipboard().setText(build_prompt(stores, payment_types, products, list(categories.values())))
+        return build_prompt(stores, payment_types, products, list(categories.values()))
+
+    def copy_scan_prompt(self):
+        QApplication.clipboard().setText(self._scan_prompt())
         self._show_scan_message(
             "Prompt copied. In Claude or Gemini, attach the receipt photo (or several for a long receipt), "
             "or for an online order a screenshot, the confirmation email or the invoice. Paste the prompt, "
@@ -644,9 +667,65 @@ class NewTransactionView(QWidget):
                 return True
         return False
 
-    def apply_scan(self, scan):
-        if self._has_items() and not ask_yes_no(
-                self, "Replace Items?", "The form already has items. Replace them with the scanned receipt?"):
+    def _confirm_replace(self):
+        return not self._has_items() or ask_yes_no(
+            self, "Replace Items?", "The form already has items. Replace them with the scanned receipt?")
+
+    def scan_with_ai(self):
+        if self._scan_task is not None:
+            self._end_scan()
+            self._show_scan_message("Scan cancelled. Nothing was changed.")
+            return
+
+        provider = ai_provider()
+        key = api_key(provider)
+        if not key:
+            self._show_scan_message(
+                f"Set up AI reading first: in {SETTINGS_HINT}, choose Claude or Gemini and save an API key.", "warn")
+            return
+
+        settings = app_settings()
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, "Choose the receipt photos or screenshots", settings.value("ai/photo_folder", ""), PHOTO_FILTER)
+        if not paths or not self._confirm_replace():
+            return
+        settings.setValue("ai/photo_folder", str(Path(paths[0]).parent))
+
+        model = ai_model(provider)
+        prompt = self._scan_prompt() + self.scan_details_input.text().strip()
+        self.scan_ai_btn.setText("Cancel Scan")
+        self._show_scan_message(f"Reading {len(paths)} picture(s) with {PROVIDERS[provider].name} ({model}). "
+                                "This can take a minute…")
+
+        def work():
+            return scan_receipt(provider, key, model, prompt, [Path(p).read_bytes() for p in paths])
+
+        # a cancelled or replaced scan's late answer is ignored
+        task = run_in_background(self, work, lambda scan: self._scan_done(task, scan),
+                                 lambda error: self._scan_failed(task, error))
+        self._scan_task = task
+
+    def _end_scan(self):
+        self._scan_task = None
+        self.scan_ai_btn.setText(SCAN_BUTTON_TEXT)
+
+    def _scan_done(self, task, scan):
+        if task is not self._scan_task:
+            return
+        self._end_scan()
+        self.apply_scan(scan, ask_replace=False)
+
+    def _scan_failed(self, task, error):
+        if task is not self._scan_task:
+            return
+        self._end_scan()
+        if not isinstance(error, (AIError, ImageError, OSError)):
+            log.error("AI scan failed", exc_info=error)
+            error = f"Something went wrong: {error}"
+        self._show_scan_message(str(error), "warn")
+
+    def apply_scan(self, scan, ask_replace=True):
+        if ask_replace and not self._confirm_replace():
             return
 
         notes = list(scan.notes)
@@ -744,6 +823,7 @@ class NewTransactionView(QWidget):
 
     def reset_form(self):
         self.receipt_number_input.clear()
+        self.scan_details_input.clear()
         self.scan_summary.setVisible(False)
         self.scan_categories = {}
         self.items_table.setRowCount(0)

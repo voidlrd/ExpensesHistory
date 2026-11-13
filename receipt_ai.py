@@ -1,10 +1,16 @@
 import base64
+import logging
 from contextlib import contextmanager
 
 import anthropic
 import httpx2
 from google import genai
 from google.genai import errors as genai_errors, types as genai_types
+
+from receipt_images import prepare_images
+from receipt_import import ScanParseError, parse_scan
+
+log = logging.getLogger("expense_tracker")
 
 TIMEOUT_SECONDS = 180
 MAX_TOKENS = 16000
@@ -144,3 +150,15 @@ class Gemini:
 
 
 PROVIDERS = {"claude": Claude, "gemini": Gemini}
+
+
+def scan_receipt(provider, api_key, model, prompt, photos):
+    """Read receipt photos (file bytes) with the provider and parse its answer into a ReceiptScan."""
+    reader = PROVIDERS[provider](api_key)
+    reply = reader.ask(model, prompt, prepare_images(photos))
+    try:
+        return parse_scan(reply)
+    except ScanParseError as e:
+        log.warning("unusable answer from %s (%s):\n%s", model, e, reply)
+        raise AIError(f"{reader.name}'s answer couldn't be read as a receipt. Check that the photos show it, "
+                      "then try again, or use Copy Prompt instead.") from None
