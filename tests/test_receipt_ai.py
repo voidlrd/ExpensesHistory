@@ -138,6 +138,14 @@ def test_gemini_errors_are_explained(status, body, expected):
         Gemini("key", server.client()).ask("gemini-4-hydrogen", "p", [b"x"])
 
 
+def test_gemini_wrong_key_is_explained_like_a_rejected_key():
+    body = {"error": {"code": 400, "message": "API key not valid. Please pass a valid API key.",
+                      "status": "INVALID_ARGUMENT",
+                      "details": [{"@type": "type.googleapis.com/google.rpc.ErrorInfo", "reason": "API_KEY_INVALID"}]}}
+    with pytest.raises(AIError, match="didn't accept the API key"):
+        Gemini("key", Recorder(400, body).client()).check("gemini-4-hydrogen")
+
+
 def test_gemini_offline_is_explained():
     server = Recorder(error=httpx2.ConnectError("no route"))
     with pytest.raises(AIError, match="Couldn't reach Gemini"):

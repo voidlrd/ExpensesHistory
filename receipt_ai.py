@@ -113,7 +113,10 @@ class Gemini:
         try:
             yield
         except genai_errors.ClientError as e:
-            if e.code in (401, 403):
+            error = e.details.get("error", {}) if isinstance(e.details, dict) else {}
+            # a wrong key comes back as a plain 400
+            reasons = {d.get("reason") for d in error.get("details", []) if isinstance(d, dict)}
+            if e.code in (401, 403) or "API_KEY_INVALID" in reasons:
                 raise _key_rejected(self.name) from None
             if e.code == 404:
                 raise _unknown_model(self.name, model) from None
