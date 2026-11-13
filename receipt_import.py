@@ -44,7 +44,7 @@ Rules:
 - name: when the product is one of the known products below, use that exact name. Otherwise write a short readable name in the receipt's language, with normal capitalisation (not ALL CAPS) and obvious abbreviations written out.
 - category is one of the known categories below (exact name) that fits the product, or null when none fits.
 - brand is the maker printed on the line (for example "Zuzu", "Napolact"), or null when the receipt doesn't show one. Keep the brand out of "name": the name stays the plain product.
-- If several photos show parts of one receipt, combine them and do not repeat lines that appear in more than one photo.
+- If several photos show parts of one receipt, combine them and do not repeat lines that appear in more than one photo. A long receipt may also arrive as overlapping slices of one photo, in order from top to bottom; treat them the same way.
 - If something is unreadable, give your best reading or null, and say what is uncertain in "notes". Never invent products or prices.
 
 Online orders:
